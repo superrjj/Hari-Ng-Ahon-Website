@@ -215,7 +215,7 @@ export function AuthPage() {
                 setFormError('')
               }}
               type="email"
-              placeholder="you@email.com"
+              placeholder="you@gmail.com"
               autoComplete="email"
               required
               className="w-full rounded-md border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-[#cfae3f] sm:py-2"

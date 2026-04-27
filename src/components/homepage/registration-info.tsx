@@ -92,7 +92,7 @@ export function RegistrationInfo() {
             <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-[0_12px_30px_-12px_rgba(15,23,42,0.28),0_6px_14px_-8px_rgba(15,23,42,0.2)] sm:p-5">
               <h4 className="text-sm font-semibold">Road Bike</h4>
               <p className="mt-1 text-xs text-slate-500">Tire Size: &lt;32mm / &lt;1.25&quot;</p>
-              <ul className="mt-3 space-y-1 text-sm text-slate-700">
+              <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-slate-700 marker:text-slate-500">
               {roadBikeCategories.map((item) => (
                 <li key={item}>{item}</li>
               ))}
@@ -101,7 +101,7 @@ export function RegistrationInfo() {
             <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-[0_12px_30px_-12px_rgba(15,23,42,0.28),0_6px_14px_-8px_rgba(15,23,42,0.2)] sm:p-5">
               <h4 className="text-sm font-semibold">Mountain Bike</h4>
               <p className="mt-1 text-xs text-slate-500">Tire Size: &gt;50mm / 1.95&quot;</p>
-              <ul className="mt-3 space-y-1 text-sm text-slate-700">
+              <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-slate-700 marker:text-slate-500">
               {mountainBikeCategories.map((item) => (
                 <li key={item}>{item}</li>
               ))}
@@ -113,11 +113,13 @@ export function RegistrationInfo() {
             <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-[0_12px_30px_-12px_rgba(15,23,42,0.28),0_6px_14px_-8px_rgba(15,23,42,0.2)] sm:p-5">
               <h4 className="text-sm font-semibold">Gravel Bike</h4>
               <p className="mt-1 text-xs text-slate-500">Tire Size: 33–49mm / 1.3–1.9&quot;</p>
-              <p className="mt-3 text-sm text-slate-700">Open Gravel Bike</p>
+              <ul className="mt-3 list-disc pl-5 text-sm text-slate-700 marker:text-slate-500">
+                <li>Open Gravel Bike</li>
+              </ul>
             </div>
             <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-[0_12px_30px_-12px_rgba(15,23,42,0.28),0_6px_14px_-8px_rgba(15,23,42,0.2)] sm:p-5">
               <h4 className="text-sm font-semibold">Mixed</h4>
-              <ul className="mt-3 space-y-1 text-sm text-slate-700">
+              <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-slate-700 marker:text-slate-500">
                 <li>Open / Elite Women</li>
                 <li>Heavyweight</li>
                 <li>Public Servant</li>

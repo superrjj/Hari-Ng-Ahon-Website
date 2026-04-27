@@ -154,7 +154,7 @@ export function RegistrationForm() {
             label={<>Email <span className="text-rose-500">*</span></>}
             type="email"
             value={form.email}
-            placeholder="you@email.com"
+            placeholder="you@gmail.com"
             error={fieldErrors.email}
             onChange={(v) => setForm((p) => ({ ...p, email: v }))}
           />
