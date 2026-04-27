@@ -32,15 +32,15 @@ export function RegistrationInfo() {
           <p className="text-sm font-medium text-slate-600">Hari ng Ahon 2026</p>
           <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">Criterium & ITT</h1>
           <dl className="grid grid-cols-1 gap-2 text-sm text-slate-800 md:grid-cols-3">
-            <div className="rounded-md border border-slate-200 bg-white px-3 py-2">
+            <div className="rounded-md border border-slate-200 bg-white px-3 py-2 shadow-[0_12px_30px_-12px_rgba(15,23,42,0.28),0_6px_14px_-8px_rgba(15,23,42,0.2)]">
               <dt className="text-xs text-slate-500">Race date</dt>
               <dd className="font-medium">May 30–31, 2026</dd>
             </div>
-            <div className="rounded-md border border-slate-200 bg-white px-3 py-2">
+            <div className="rounded-md border border-slate-200 bg-white px-3 py-2 shadow-[0_12px_30px_-12px_rgba(15,23,42,0.28),0_6px_14px_-8px_rgba(15,23,42,0.2)]">
               <dt className="text-xs text-slate-500">Criterium</dt>
               <dd className="font-medium">Burnham Park</dd>
             </div>
-            <div className="rounded-md border border-slate-200 bg-white px-3 py-2">
+            <div className="rounded-md border border-slate-200 bg-white px-3 py-2 shadow-[0_12px_30px_-12px_rgba(15,23,42,0.28),0_6px_14px_-8px_rgba(15,23,42,0.2)]">
               <dt className="text-xs text-slate-500">ITT</dt>
               <dd className="font-medium">Lion&apos;s Head – Radar</dd>
             </div>
@@ -67,7 +67,7 @@ export function RegistrationInfo() {
           </p>
         </section>
 
-        <section className="space-y-4 rounded-lg border border-slate-200 bg-white p-5">
+        <section className="space-y-4 rounded-lg border border-slate-200 bg-white p-5 shadow-[0_12px_30px_-12px_rgba(15,23,42,0.28),0_6px_14px_-8px_rgba(15,23,42,0.2)]">
           <h3 className="text-lg font-semibold">Registration fees</h3>
           <p className="text-sm text-slate-600">
             Race Inclusions: Finisher Shirt, Drawstring bag, Race Bib, Bike plate, Post-Race Meal, Finisher Medal
@@ -75,7 +75,7 @@ export function RegistrationInfo() {
           </p>
           <div className="flex flex-wrap items-center gap-3">
             <span className="rounded-md bg-[#cfae3f] px-3 py-1 text-sm font-semibold text-black">Tier 1</span>
-            <span className="text-sm text-slate-800">₱1 (Test payment)</span>
+            <span className="text-sm text-slate-800">₱1000 (Early registration)</span>
             <span className="text-xs text-slate-500">Current</span>
           </div>
           <p className="text-xs text-slate-500">
@@ -86,7 +86,7 @@ export function RegistrationInfo() {
         <section className="space-y-6">
           <h3 className="text-lg font-semibold">Categories</h3>
           <div className="grid gap-4 md:grid-cols-2">
-            <div className="rounded-lg border border-slate-200 bg-white p-5">
+            <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-[0_12px_30px_-12px_rgba(15,23,42,0.28),0_6px_14px_-8px_rgba(15,23,42,0.2)]">
               <h4 className="text-sm font-semibold">Road Bike</h4>
               <p className="mt-1 text-xs text-slate-500">Tire Size: &lt;32mm / &lt;1.25&quot;</p>
               <ul className="mt-3 space-y-1 text-sm text-slate-700">
@@ -95,7 +95,7 @@ export function RegistrationInfo() {
               ))}
               </ul>
             </div>
-            <div className="rounded-lg border border-slate-200 bg-white p-5">
+            <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-[0_12px_30px_-12px_rgba(15,23,42,0.28),0_6px_14px_-8px_rgba(15,23,42,0.2)]">
               <h4 className="text-sm font-semibold">Mountain Bike</h4>
               <p className="mt-1 text-xs text-slate-500">Tire Size: &gt;50mm / 1.95&quot;</p>
               <ul className="mt-3 space-y-1 text-sm text-slate-700">
@@ -107,12 +107,12 @@ export function RegistrationInfo() {
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
-            <div className="rounded-lg border border-slate-200 bg-white p-5">
+            <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-[0_12px_30px_-12px_rgba(15,23,42,0.28),0_6px_14px_-8px_rgba(15,23,42,0.2)]">
               <h4 className="text-sm font-semibold">Gravel Bike</h4>
               <p className="mt-1 text-xs text-slate-500">Tire Size: 33–49mm / 1.3–1.9&quot;</p>
               <p className="mt-3 text-sm text-slate-700">Open Gravel Bike</p>
             </div>
-            <div className="rounded-lg border border-slate-200 bg-white p-5">
+            <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-[0_12px_30px_-12px_rgba(15,23,42,0.28),0_6px_14px_-8px_rgba(15,23,42,0.2)]">
               <h4 className="text-sm font-semibold">Mixed</h4>
               <ul className="mt-3 space-y-1 text-sm text-slate-700">
                 <li>Open / Elite Women</li>
