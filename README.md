@@ -1,75 +1,54 @@
-# React + TypeScript + Vite
+# Hari ng Ahon - Cycling Race Management
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Modern full-stack cycling race management platform for Hari ng Ahon (Baguio City), built with React + TypeScript + Vite, Tailwind CSS, and Supabase.
 
-Currently, two official plugins are available:
+## Tech Stack
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- React + TypeScript + Vite
+- Tailwind CSS (dark sporty theme)
+- Supabase (PostgreSQL, Auth, Storage)
+- JWT-based session handling with role-protected routes
+- Cloudflare Pages-ready build
 
-## React Compiler
+## Features
 
-The React Compiler is enabled on this template. See [this documentation](https://react.dev/learn/react-compiler) for more information.
+- Public cyclist pages: home, events, event details, announcements, results, gallery
+- Cyclist auth: register/login/logout with form validation
+- Cyclist dashboard and race registration flow with payment proof upload
+- Admin pages: dashboard, manage events, registrations, results, users
+- Type-safe services and reusable shell layout
 
-Note: This will impact Vite dev & build performances.
+## Folder Structure
 
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```text
+src/
+  components/
+  pages/
+  layouts/
+  routes/
+  hooks/
+  services/
+  lib/
+  types/
+  utils/
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## Environment Variables
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+Set these in `.env`:
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+VITE_DATABASE_URL=your_supabase_project_url
+VITE_DATABASE_ANON_KEY=your_supabase_anon_key
+```
+
+## Database Setup
+
+Run `supabase/schema.sql` in your Supabase SQL editor, then create a storage bucket named `payment-proofs`.
+
+## Run
+
+```bash
+npm install
+npm run dev
 ```
