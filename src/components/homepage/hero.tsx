@@ -7,7 +7,7 @@ export function Hero() {
         <img
           src="/bg1.jpg"
           alt="Hero race"
-          className="absolute inset-0 h-full w-full object-cover opacity-55"
+          className="absolute inset-0 h-full w-full object-cover opacity-70"
         />
         <div className="absolute inset-0 bg-linear-to-t from-[#131313]/70 via-[#131313]/45 to-transparent" />
 
@@ -32,12 +32,6 @@ export function Hero() {
               className="border-2 border-[#cfae3f] bg-[#cfae3f] px-8 py-4 text-xs font-bold uppercase tracking-[0.15em] text-black"
             >
               Register Now
-            </Link>
-            <Link
-              to="/register/info"
-              className="border-2 border-[#cfae3f] bg-black/30 px-8 py-4 text-xs font-bold uppercase tracking-[0.15em] text-[#cfae3f]"
-            >
-              View Course Maps
             </Link>
           </div>
         </div>

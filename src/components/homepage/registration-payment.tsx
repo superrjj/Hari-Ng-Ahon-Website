@@ -1,15 +1,270 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { registrationService } from '../../services/registrationService'
+
+// ─── Step config ──────────────────────────────────────────────────────────────
+
+const STEPS = [
+  {
+    key: 'waiver' as const,
+    title: 'Accident Waiver and Release of Liability',
+    content: (
+      <div className="space-y-3 text-sm leading-relaxed text-slate-700">
+        <p>
+          I understand and agree that I am voluntarily participating in the{' '}
+          <strong>HARI NG AHON</strong> and all of its activities including but
+          not limited to training for and participating in any of its events. I
+          acknowledge that this athletic event is an extreme test of a person's
+          physical and mental limits and carries with it a potential for property
+          loss, serious injury and death.
+        </p>
+        <p>
+          The risks include, but are not limited to those caused by terrain,
+          facilities, temperature, weather, condition of athletes, equipment,
+          actions of other people including but not limited to participants,
+          volunteers, spectators, coaches, event officials, and event monitors,
+          and/or producers of the event. These risks are not only inherent to
+          athletes, but are also present on the part of the persons or entities
+          being released, from dangerous or defective equipment or property
+          owned, maintained or controlled by them or because of their possible
+          liability without fault.
+        </p>
+        <p>
+          I certify that I am physically fit, have sufficiently trained for
+          participation in the event and have not been advised otherwise by a
+          qualified medical person to not participate in such activities.
+        </p>
+        <p>
+          I understand that at this event or related activities, I may be
+          photographed. I agree to allow my photo, video or film to be used for
+          any legitimate purpose by the event holders, producers, sponsors,
+          organizers and/or assigns.
+        </p>
+        <p>
+          I acknowledge that this Accident Waiver and Release of Liability form
+          will be used by the event holders, sponsors and organizers for the
+          event in which I participate and that it will cover my actions and
+          responsibilities at said events.
+        </p>
+        <p>
+          I, in consideration of and as a condition of acceptance of this entry
+          for myself, my executors, administrators, heirs, next of kin,
+          successors and assigns hereby waive, release and discharge the event
+          organizers, sponsors, or volunteers from all claims, actions or
+          damages that the former may have against the latter however caused,
+          arising out of or in any way connected with my participation in this
+          event.
+        </p>
+        <p>
+          This AWRL shall be construed broadly to provide a waiver to the
+          maximum extent permissible under applicable law.
+        </p>
+        <p>
+          By submitting this registration form, I confirm that I am at least 18
+          years old or have obtained permission from my parents or legal guardian
+          to participate in this event.
+        </p>
+      </div>
+    ),
+  },
+  {
+    key: 'rules' as const,
+    title: 'Race Rules',
+    content: (
+      <div className="space-y-3 text-sm leading-relaxed text-slate-700">
+        <p>
+          These rules are intended to promote sportsmanship, equality, and fair
+          play, while prioritizing the safety of all participants. Any
+          participant who gains an unfair advantage, violates these rules, or
+          compromises safety may be penalized or disqualified.
+        </p>
+        <div>
+          <p className="mb-1 font-semibold text-slate-900">A) General Conduct</p>
+          <ul className="list-disc space-y-1 pl-5">
+            <li>Must practice good sportsmanship at all times and be responsible for their own safety and that of others.</li>
+            <li>Should know, understand, and follow all published Race Rules.</li>
+            <li>Must obey the instructions of race officials, marshals, and law enforcement.</li>
+            <li>Must remain alert, especially in technical sections, sharp turns, and descents.</li>
+            <li>Must treat fellow participants, officials, volunteers, and spectators with respect and courtesy.</li>
+            <li>Must avoid using abusive or offensive language.</li>
+            <li>Must inform a race official immediately if withdrawing from the race.</li>
+            <li>Must complete the entire official race route without receiving outside assistance except from authorized race personnel.</li>
+            <li>Must allow faster riders to pass without obstruction.</li>
+            <li>Glass containers are not permitted on or near the course.</li>
+          </ul>
+        </div>
+        <div>
+          <p className="mb-1 font-semibold text-slate-900">B) Equipment</p>
+          <ul className="list-disc space-y-1 pl-5">
+            <li>Only human-powered bicycles in safe and working condition are allowed.</li>
+            <li>All bicycles must have functional front and rear brakes.</li>
+            <li>Minimum tire width for mountain bikes is 1.90 inches (if applicable).</li>
+            <li>Riders must wear an approved helmet at all times. Failure to do so will result in immediate disqualification.</li>
+          </ul>
+        </div>
+        <div>
+          <p className="mb-1 font-semibold text-slate-900">C) Health &amp; Safety</p>
+          <ul className="list-disc space-y-1 pl-5">
+            <li>Participants must be in good health to participate.</li>
+            <li>By registering, participants declare they are physically capable of completing the event.</li>
+            <li>A pre-event health check is strongly encouraged.</li>
+          </ul>
+        </div>
+        <div>
+          <p className="mb-1 font-semibold text-slate-900">D) Eligibility</p>
+          <ul className="list-disc space-y-1 pl-5">
+            <li>Age category is determined by the participant's age on December 31 of the race year.</li>
+            <li>Minors must submit parent/guardian consent.</li>
+            <li>Entering a category outside your correct age group will result in disqualification.</li>
+            <li>Race registrations are non-transferable.</li>
+            <li>Any misrepresentation of identity or details will result in immediate disqualification.</li>
+          </ul>
+        </div>
+        <div>
+          <p className="mb-1 font-semibold text-slate-900">E) Prohibited Equipment</p>
+          <ul className="list-disc space-y-1 pl-5">
+            <li>Headphones, headsets, or any listening devices</li>
+            <li>Use of mobile phones while riding</li>
+            <li>Glass containers</li>
+            <li>Aerobars / Tri-bars (unless explicitly allowed)</li>
+          </ul>
+        </div>
+        <div>
+          <p className="mb-1 font-semibold text-slate-900">F) Outside Assistance</p>
+          <p>No outside assistance is allowed except from official race personnel or aid stations.</p>
+        </div>
+        <div>
+          <p className="mb-1 font-semibold text-slate-900">G) Protests</p>
+          <ul className="list-disc space-y-1 pl-5">
+            <li>Protests on eligibility must be made to the Race Organizer on the day of the event.</li>
+            <li>Protests on results/timing must be submitted in writing within three (3) days after the race.</li>
+            <li>A protest must be accompanied by a ₱2,000 deposit, refundable if upheld.</li>
+          </ul>
+        </div>
+        <div>
+          <p className="mb-1 font-semibold text-slate-900">H) Event Changes &amp; Refunds</p>
+          <p>
+            The Organizer may modify, postpone, or cancel the event at any time
+            due to safety concerns, weather, or circumstances beyond their
+            control. All entry fees are non-refundable unless the Organizer
+            decides otherwise.
+          </p>
+        </div>
+      </div>
+    ),
+  },
+]
+
+// ─── Modal ────────────────────────────────────────────────────────────────────
+
+interface StepModalProps {
+  step: (typeof STEPS)[number]
+  stepNumber: number
+  totalSteps: number
+  onAgree: () => void
+  onClose: () => void
+}
+
+function StepModal({ step, stepNumber, totalSteps, onAgree, onClose }: StepModalProps) {
+  const [canAgree, setCanAgree] = useState(false)
+  const bodyRef = useRef<HTMLDivElement>(null)
+
+  const handleScroll = () => {
+    if (canAgree) return
+    const el = bodyRef.current
+    if (!el) return
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 24) {
+      setCanAgree(true)
+    }
+  }
+
+  const isLastStep = stepNumber === totalSteps
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
+    >
+      <div className="flex max-h-[85vh] w-full max-w-xl flex-col rounded-xl border border-slate-200 bg-white shadow-xl">
+        {/* Header */}
+        <div className="flex items-start justify-between border-b border-slate-200 px-5 py-4">
+          <div>
+            <p className="mb-0.5 text-xs text-slate-400">Step {stepNumber} of {totalSteps}</p>
+            <h2 className="text-base font-semibold text-slate-900">{step.title}</h2>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="ml-4 mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+            aria-label="Close"
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Body */}
+        <div
+          ref={bodyRef}
+          onScroll={handleScroll}
+          className="flex-1 overflow-y-auto px-5 py-4"
+        >
+          {step.content}
+          <div className="h-2" />
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between border-t border-slate-200 px-5 py-3">
+          <p className="text-xs text-slate-400">
+            {canAgree ? '✓ You have read this document.' : 'Scroll to the bottom to continue.'}
+          </p>
+          <button
+            type="button"
+            onClick={onAgree}
+            disabled={!canAgree}
+            className="rounded-md bg-[#cfae3f] px-4 py-2 text-sm font-semibold text-black transition hover:bg-[#dab852] disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {isLastStep ? 'I agree to both' : 'Next →'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────────
 
 export function RegistrationPayment() {
   const [params] = useSearchParams()
   const registrationId = params.get('registrationId')
-  const [agree, setAgree] = useState(false)
+
+  // null = closed, 0 = waiver modal, 1 = rules modal
+  const [modalStep, setModalStep] = useState<number | null>(null)
+  const [agreed, setAgreed] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const merchantReference = useMemo(() => `HNA-${registrationId ?? 'NA'}-${Date.now()}`, [registrationId])
+  const merchantReference = useMemo(
+    () => `HNA-${registrationId ?? 'NA'}-${Date.now()}`,
+    [registrationId],
+  )
+
+  const handleCheckboxClick = () => {
+    if (agreed) {
+      setAgreed(false)
+    } else {
+      setModalStep(0)
+    }
+  }
+
+  const handleStepAgree = () => {
+    const nextStep = (modalStep ?? 0) + 1
+    if (nextStep < STEPS.length) {
+      setModalStep(nextStep)
+    } else {
+      setModalStep(null)
+      setAgreed(true)
+    }
+  }
 
   const onSubmit = async () => {
     setError(null)
@@ -17,11 +272,10 @@ export function RegistrationPayment() {
       setError('Missing registrationId.')
       return
     }
-    if (!agree) {
-      setError('Please accept the waiver and rules.')
+    if (!agreed) {
+      setError('Please accept the Agreement and Liability Waiver and Race Rules.')
       return
     }
-
     setSubmitting(true)
     try {
       const payment = await registrationService.createPaymentOrder({
@@ -31,9 +285,7 @@ export function RegistrationPayment() {
         acceptLiability: true,
         acceptRules: true,
       })
-      if (!payment.checkoutUrl) {
-        throw new Error('Missing checkout URL from payment provider.')
-      }
+      if (!payment.checkoutUrl) throw new Error('Missing checkout URL from payment provider.')
       window.location.assign(payment.checkoutUrl)
     } catch (e) {
       setError((e as Error).message)
@@ -43,52 +295,96 @@ export function RegistrationPayment() {
   }
 
   return (
-    <section className="bg-white px-4 py-10 text-slate-900">
-      <div className="mx-auto max-w-[760px] space-y-6">
-        <div className="space-y-1">
-          <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">Payment</h1>
-          <p className="text-sm text-slate-600">Complete payment to confirm your registration.</p>
-        </div>
-
-        <div className="rounded-lg border border-slate-200 bg-white p-5 text-sm text-slate-800">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-slate-600">Registration fee</p>
-            <p className="font-medium">₱1000.00 (Early registration)</p>
+    <>
+      <section className="bg-white px-4 py-10 text-slate-900">
+        <div className="mx-auto max-w-[760px] space-y-6">
+          {/* Heading */}
+          <div className="space-y-1">
+            <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">Payment</h1>
+            <p className="text-sm text-slate-600">Complete payment to confirm your registration.</p>
           </div>
-          <div className="mt-3 flex items-center justify-between">
-            <p className="text-slate-600">Total</p>
-            <p className="text-lg font-semibold text-slate-900">₱1000.00</p>
+
+          {/* Fee summary */}
+          <div className="rounded-lg border border-slate-200 bg-white p-5 text-sm text-slate-800">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-slate-600">Registration fee</p>
+              <p className="font-medium">₱1,000.00 (Early registration)</p>
+            </div>
+            <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3">
+              <p className="text-slate-600">Total</p>
+              <p className="text-lg font-semibold text-slate-900">₱1,000.00</p>
+            </div>
           </div>
+
+          {/* Checkout info */}
+          <div className="space-y-2">
+            <h2 className="text-lg font-semibold">Secure checkout</h2>
+            <p className="text-sm text-slate-600">
+              You will be redirected to PayMongo to complete payment. Your
+              registration stays pending until webhook confirmation marks the
+              payment as paid.
+            </p>
+          </div>
+
+          {/* Agree row — matches original design exactly */}
+          <div className="space-y-3">
+            <p className="text-sm font-medium text-slate-800">
+              Please read{' '}
+              <button
+                type="button"
+                onClick={() => setModalStep(0)}
+                className="text-green-700 underline underline-offset-2 hover:text-green-900"
+              >
+                Agreement and Liability Waiver
+              </button>
+              , as well as the{' '}
+              <button
+                type="button"
+                onClick={() => setModalStep(1)}
+                className="text-green-700 underline underline-offset-2 hover:text-green-900"
+              >
+                Race Rules
+              </button>
+              . <span className="text-rose-500">*</span>
+            </p>
+
+            <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-800 transition hover:border-slate-300">
+              <input
+                type="checkbox"
+                className="mt-0.5 h-4 w-4 accent-green-600"
+                checked={agreed}
+                onChange={handleCheckboxClick}
+              />
+              <span>I have read and agree to the Agreement and Liability Waiver and Race Rules.</span>
+            </label>
+          </div>
+
+          {/* Error */}
+          {error && <p className="text-sm text-rose-600">{error}</p>}
+
+          {/* Submit */}
+          <button
+            type="button"
+            onClick={() => void onSubmit()}
+            disabled={submitting}
+            className="inline-flex items-center rounded-md bg-[#cfae3f] px-5 py-2.5 text-sm font-semibold text-black transition hover:bg-[#dab852] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {submitting ? 'Redirecting…' : 'Proceed to PayMongo'}
+          </button>
         </div>
+      </section>
 
-        <div className="space-y-3">
-          <h2 className="text-lg font-semibold">Secure checkout</h2>
-          <p className="text-sm text-slate-600">
-            You will be redirected to PayMongo to complete payment. Your registration stays pending until webhook
-            confirmation marks the payment as paid.
-          </p>
-          <p className="text-sm">
-            Please read <a className="text-slate-900 underline" href="#">Agreement and Liability Waiver</a>, as well as
-            the <a className="text-slate-900 underline" href="#">Race Rules</a>.
-          </p>
-        </div>
-
-        <label className="flex items-start gap-2 rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-800">
-          <input type="checkbox" className="mt-1" checked={agree} onChange={(e) => setAgree(e.target.checked)} />
-          <span>I have read and agree to the Agreement and Liability Waiver and Race Rules.</span>
-        </label>
-
-        {error && <p className="text-sm text-rose-600">{error}</p>}
-
-        <button
-          type="button"
-          onClick={() => void onSubmit()}
-          disabled={submitting}
-          className="inline-flex items-center rounded-md bg-[#cfae3f] px-5 py-2.5 text-sm font-semibold text-black transition hover:bg-[#dab852] disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {submitting ? 'Redirecting…' : 'Proceed to PayMongo'}
-        </button>
-      </div>
-    </section>
+      {/* Sequential step modals */}
+      {modalStep !== null && (
+        <StepModal
+          key={modalStep}
+          step={STEPS[modalStep]}
+          stepNumber={modalStep + 1}
+          totalSteps={STEPS.length}
+          onAgree={handleStepAgree}
+          onClose={() => setModalStep(null)}
+        />
+      )}
+    </>
   )
 }
