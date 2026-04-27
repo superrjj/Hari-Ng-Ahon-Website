@@ -162,14 +162,15 @@ export const adminApi = {
     if (txError) throw txError
 
     const payment_status = normalizePaymentStatus({ orderStatus: order?.status ?? null, txStatus: tx?.status ?? null })
+    const event = Array.isArray((reg as any)?.event) ? (reg as any).event?.[0] : (reg as any)?.event
 
     return {
       registration: (reg
         ? ({
             id: reg.id,
             created_at: reg.created_at,
-            race_type: reg.event?.race_type ?? null,
-            event_title: reg.event?.title ?? null,
+            race_type: event?.race_type ?? null,
+            event_title: event?.title ?? null,
             registrant_email: reg.registrant_email ?? null,
             status: reg.status ?? null,
             payment_status,
