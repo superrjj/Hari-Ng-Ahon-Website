@@ -1,3 +1,5 @@
+import { Link } from 'react-router-dom'
+
 export function Hero() {
   return (
     <div className="bg-[#131313] text-[#e5e2e1]">
@@ -25,12 +27,18 @@ export function Hero() {
             legacy in the most grueling high-altitude cycling race in the Philippines.
           </p>
           <div className="mt-8 flex flex-wrap gap-4">
-            <button className="border-2 border-[#cfae3f] bg-[#cfae3f] px-8 py-4 text-xs font-bold uppercase tracking-[0.15em] text-black">
+            <Link
+              to="/register/info"
+              className="border-2 border-[#cfae3f] bg-[#cfae3f] px-8 py-4 text-xs font-bold uppercase tracking-[0.15em] text-black"
+            >
               Register Now
-            </button>
-            <button className="border-2 border-[#cfae3f] bg-black/30 px-8 py-4 text-xs font-bold uppercase tracking-[0.15em] text-[#cfae3f]">
+            </Link>
+            <Link
+              to="/register/info"
+              className="border-2 border-[#cfae3f] bg-black/30 px-8 py-4 text-xs font-bold uppercase tracking-[0.15em] text-[#cfae3f]"
+            >
               View Course Maps
-            </button>
+            </Link>
           </div>
         </div>
       </section>
