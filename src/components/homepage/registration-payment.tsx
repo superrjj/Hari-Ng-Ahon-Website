@@ -24,17 +24,17 @@ export function RegistrationPayment() {
 
     setSubmitting(true)
     try {
-      await registrationService.createPaymentOrder({
+      const payment = await registrationService.createPaymentOrder({
         registrationId,
         amount: 1000,
         merchantReference,
         acceptLiability: true,
         acceptRules: true,
       })
-      // Payment is NOT confirmed here. Webhook will set payment_orders.status=paid.
-      // You can redirect to a PayMongo checkout URL once created.
-      setError(null)
-      alert('Payment order created. Waiting for PayMongo payment + webhook confirmation.')
+      if (!payment.checkoutUrl) {
+        throw new Error('Missing checkout URL from payment provider.')
+      }
+      window.location.assign(payment.checkoutUrl)
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -61,28 +61,11 @@ export function RegistrationPayment() {
           </div>
         </div>
 
-        <div className="rounded-lg border border-slate-200 bg-white p-5">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-semibold">Scan to pay</p>
-            <span className="text-xs text-slate-500">PayMongo</span>
-          </div>
-          <div className="mt-4 flex items-center justify-center rounded-md bg-slate-50 p-6">
-            <div className="h-56 w-56 rounded bg-white shadow-sm ring-1 ring-slate-200" />
-          </div>
-          <p className="mt-3 text-sm text-slate-600">HnA ITT/CRITERIUM Payment</p>
-        </div>
-
         <div className="space-y-3">
-          <h2 className="text-lg font-semibold">Other payment option</h2>
-          <a
-            href="#"
-            className="inline-flex text-sm font-semibold text-[#cfae3f] underline decoration-1 underline-offset-4 hover:text-[#dab852]"
-          >
-            PAY HERE
-          </a>
+          <h2 className="text-lg font-semibold">Secure checkout</h2>
           <p className="text-sm text-slate-600">
-            Please complete your payment before submitting the form to confirm your registration. After payment, make
-            sure to submit the form.
+            You will be redirected to PayMongo to complete payment. Your registration stays pending until webhook
+            confirmation marks the payment as paid.
           </p>
           <p className="text-sm">
             Please read <a className="text-slate-900 underline" href="#">Agreement and Liability Waiver</a>, as well as
@@ -103,7 +86,7 @@ export function RegistrationPayment() {
           disabled={submitting}
           className="inline-flex items-center rounded-md bg-[#cfae3f] px-5 py-2.5 text-sm font-semibold text-black transition hover:bg-[#dab852] disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {submitting ? 'Submitting…' : 'Submit'}
+          {submitting ? 'Redirecting…' : 'Proceed to PayMongo'}
         </button>
       </div>
     </section>

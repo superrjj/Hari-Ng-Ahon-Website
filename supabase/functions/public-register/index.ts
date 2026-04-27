@@ -6,6 +6,14 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
+
+function textResponse(message: string, status: number) {
+  return new Response(message, { status, headers: corsHeaders })
+}
 
 type Body = {
   raceType: 'criterium' | 'itt'
@@ -28,24 +36,25 @@ type Body = {
 }
 
 Deno.serve(async (req) => {
-  if (req.method !== 'POST') return new Response('Method not allowed', { status: 405 })
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
+  if (req.method !== 'POST') return textResponse('Method not allowed', 405)
 
   let body: Body
   try {
     body = await req.json()
   } catch {
-    return new Response('Invalid JSON', { status: 400 })
+    return textResponse('Invalid JSON', 400)
   }
 
   const normalizedEmail = String(body.registrantEmail ?? '').trim().toLowerCase()
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
   if (!normalizedEmail || !emailRegex.test(normalizedEmail)) {
-    return new Response('Invalid registrantEmail', { status: 400 })
+    return textResponse('Invalid registrantEmail', 400)
   }
 
   if (!body.rider?.firstName || !body.rider?.lastName || !body.rider?.birthDate) {
-    return new Response('Missing required fields', { status: 400 })
+    return textResponse('Missing required fields', 400)
   }
 
   const { data: event, error: eventError } = await supabase
@@ -57,8 +66,26 @@ Deno.serve(async (req) => {
     .limit(1)
     .maybeSingle()
 
-  if (eventError) return new Response(eventError.message, { status: 500 })
-  if (!event?.id) return new Response(`No published event found for ${body.raceType}`, { status: 400 })
+  if (eventError) return textResponse(eventError.message, 500)
+
+  if (!event?.id) return textResponse(`No published event found for ${body.raceType}`, 400)
+
+  // Prevent duplicate-key failures on ux_registration_forms_email_event by reusing
+  // an existing public registration for the same email + event.
+  const { data: existingRegistration, error: existingRegistrationError } = await supabase
+    .from('registration_forms')
+    .select('id')
+    .eq('event_id', event.id)
+    .eq('registrant_email', normalizedEmail)
+    .is('user_id', null)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (existingRegistrationError) return textResponse(existingRegistrationError.message, 500)
+  if (existingRegistration?.id) {
+    return Response.json({ registrationId: existingRegistration.id, reused: true }, { headers: corsHeaders })
+  }
 
   const { data: form, error: formError } = await supabase
     .from('registration_forms')
@@ -74,7 +101,7 @@ Deno.serve(async (req) => {
     .select('id')
     .single()
 
-  if (formError) return new Response(formError.message, { status: 500 })
+  if (formError) return textResponse(formError.message, 500)
 
   const { error: detailsError } = await supabase.from('registration_rider_details').insert({
     registration_id: form.id,
@@ -93,15 +120,15 @@ Deno.serve(async (req) => {
     jersey_size: body.rider.jerseySize ?? null,
   })
 
-  if (detailsError) return new Response(detailsError.message, { status: 500 })
+  if (detailsError) return textResponse(detailsError.message, 500)
 
   const { error: agreementError } = await supabase.from('registration_agreements').insert({
     registration_id: form.id,
     liability_waiver_accepted: false,
     race_rules_accepted: false,
   })
-  if (agreementError) return new Response(agreementError.message, { status: 500 })
+  if (agreementError) return textResponse(agreementError.message, 500)
 
-  return Response.json({ registrationId: form.id })
+  return Response.json({ registrationId: form.id }, { headers: corsHeaders })
 })
 

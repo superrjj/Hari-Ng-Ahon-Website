@@ -52,7 +52,10 @@ export const registrationService = {
       },
     })
     if (error) throw error
-    return { paymentOrderId: data.paymentOrderId as string }
+    return {
+      paymentOrderId: data.paymentOrderId as string,
+      checkoutUrl: data.checkoutUrl as string | undefined,
+    }
   },
 
   // agreements handled inside public-create-payment

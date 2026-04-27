@@ -11,6 +11,8 @@ const categories = [
 ]
 
 const shirtSizes = ['XS', 'S', 'M', 'L', 'XL']
+const cardClass =
+  'rounded-xl border border-slate-200 bg-white p-5 shadow-[0_12px_30px_-12px_rgba(15,23,42,0.28),0_6px_14px_-8px_rgba(15,23,42,0.2)]'
 
 export function RegistrationForm() {
   const navigate = useNavigate()
@@ -28,7 +30,7 @@ export function RegistrationForm() {
     discipline: 'Road Bike',
   })
   const [birthYear, setBirthYear] = useState('2004')
-  const [category, setCategory] = useState('OPEN Road Bike')
+  const [category, setCategory] = useState('')
   const [shirtSize, setShirtSize] = useState('L')
   const [eventKey, setEventKey] = useState<'criterium' | 'itt'>('criterium')
   const [submitting, setSubmitting] = useState(false)
@@ -92,7 +94,7 @@ export function RegistrationForm() {
           <p className="text-sm text-slate-600">Fill up the rider information and choose your category.</p>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 rounded-lg border border-slate-200 bg-white p-5 md:grid-cols-2">
+        <div className={`${cardClass} grid grid-cols-1 gap-4 md:grid-cols-2`}>
           <Field
             label="Email *"
             type="email"
@@ -127,7 +129,7 @@ export function RegistrationForm() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 rounded-lg border border-slate-200 bg-white p-5 md:grid-cols-2">
+        <div className={`${cardClass} grid grid-cols-1 gap-4 md:grid-cols-2`}>
           <Field
             label="First Name *"
             value={form.firstName}
@@ -184,7 +186,7 @@ export function RegistrationForm() {
           />
         </div>
 
-        <div className="space-y-2 rounded-lg border border-slate-200 bg-white p-5">
+        <div className={`${cardClass} space-y-2`}>
           <label className="text-sm font-semibold text-slate-900">Category</label>
           <p className="text-xs text-slate-500">
             *The organizers reserve the right to merge categories with less than 10 participants.
@@ -194,6 +196,9 @@ export function RegistrationForm() {
             onChange={(e) => setCategory(e.target.value)}
             className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-[#cfae3f]"
           >
+            <option value="" disabled>
+              Select age category
+            </option>
             {categories.map((item) => (
               <option key={item} value={item}>
                 {item}
@@ -202,24 +207,26 @@ export function RegistrationForm() {
           </select>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 rounded-lg border border-slate-200 bg-white p-5 md:grid-cols-2">
-          <SelectField
-            label="Discipline *"
-            value={form.discipline}
-            options={['Road Bike', 'Mountain Bike', 'Gravel Bike']}
-            onChange={(v) => setForm((p) => ({ ...p, discipline: v }))}
-          />
-          <div className="space-y-2">
-            <label className="text-sm font-semibold text-slate-900">Birth Year *</label>
-            <input
-              value={birthYear}
-              onChange={(e) => setBirthYear(e.target.value)}
-              className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-[#cfae3f]"
+        {category && (
+          <div className={`${cardClass} grid grid-cols-1 gap-4 md:grid-cols-2`}>
+            <SelectField
+              label="Discipline *"
+              value={form.discipline}
+              options={['Road Bike', 'Mountain Bike', 'Gravel Bike']}
+              onChange={(v) => setForm((p) => ({ ...p, discipline: v }))}
             />
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-slate-900">Birth Year *</label>
+              <input
+                value={birthYear}
+                onChange={(e) => setBirthYear(e.target.value)}
+                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-[#cfae3f]"
+              />
+            </div>
           </div>
-        </div>
+        )}
 
-        <div className="space-y-2 rounded-lg border border-slate-200 bg-white p-5 text-sm text-slate-700">
+        <div className={`${cardClass} space-y-2 text-sm text-slate-700`}>
           <p className="text-xs text-slate-500">
             Age is based on your age on December 31st of the competition year.
           </p>
@@ -229,7 +236,7 @@ export function RegistrationForm() {
           </div>
         </div>
 
-        <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-5">
+        <div className={`${cardClass} space-y-3`}>
           <label className="text-sm font-semibold text-slate-900">Event Shirt</label>
           <div className="flex flex-wrap gap-2">
             {shirtSizes.map((size) => (
