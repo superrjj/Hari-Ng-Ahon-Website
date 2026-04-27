@@ -26,7 +26,7 @@ export function RegistrationPayment() {
     try {
       const payment = await registrationService.createPaymentOrder({
         registrationId,
-        amount: 1000,
+        amount: 1,
         merchantReference,
         acceptLiability: true,
         acceptRules: true,
@@ -53,11 +53,11 @@ export function RegistrationPayment() {
         <div className="rounded-lg border border-slate-200 bg-white p-5 text-sm text-slate-800">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-slate-600">Registration fee</p>
-            <p className="font-medium">₱1000.00 (Early registration)</p>
+            <p className="font-medium">₱1.00 (Test payment)</p>
           </div>
           <div className="mt-3 flex items-center justify-between">
             <p className="text-slate-600">Total</p>
-            <p className="text-lg font-semibold text-slate-900">₱1000.00</p>
+            <p className="text-lg font-semibold text-slate-900">₱1.00</p>
           </div>
         </div>
 
