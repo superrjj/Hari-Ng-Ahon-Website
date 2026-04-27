@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { useAuth } from '../../hooks/useAuth'
 
 const roadBikeCategories = [
   'RB OPEN/ELITE',
@@ -23,6 +24,8 @@ const mountainBikeCategories = [
 ]
 
 export function RegistrationInfo() {
+  const { session } = useAuth()
+
   return (
     <section className="bg-white px-4 py-8 text-slate-900 sm:px-6 sm:py-10 lg:px-8">
       <div className="mx-auto w-full max-w-[760px] space-y-8 sm:space-y-10">
@@ -125,7 +128,7 @@ export function RegistrationInfo() {
 
         <div className="pt-2">
           <Link
-            to="/register/form"
+            to={session ? '/register/form' : '/auth?redirect=%2Fregister%2Fform'}
             className="inline-flex w-full items-center justify-center rounded-md bg-[#cfae3f] px-5 py-2.5 text-sm font-semibold text-black transition hover:bg-[#dab852] sm:w-auto"
           >
             Next

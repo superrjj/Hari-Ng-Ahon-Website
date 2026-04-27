@@ -15,6 +15,7 @@ interface AuthContextValue {
   loading: boolean
   login: (email: string, password: string) => Promise<void>
   register: (email: string, password: string, fullName: string) => Promise<void>
+  resendConfirmation: (email: string) => Promise<void>
   logout: () => Promise<void>
 }
 
@@ -64,6 +65,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           options: {
             data: { full_name: fullName, role: 'cyclist' },
           },
+        })
+        if (error) throw error
+      },
+      resendConfirmation: async (email) => {
+        const { error } = await supabase.auth.resend({
+          type: 'signup',
+          email,
         })
         if (error) throw error
       },
