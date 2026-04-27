@@ -19,7 +19,7 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, timeoutMes
 export function AuthPage() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { login, register, resendConfirmation, session, loading } = useAuth()
+  const { login, register, resendConfirmation, session, loading, role, roleLoading } = useAuth()
   const [mode, setMode] = useState<AuthMode>('login')
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
@@ -33,16 +33,24 @@ export function AuthPage() {
   const [passwordError, setPasswordError] = useState('')
   const [formError, setFormError] = useState('')
 
-  const redirectTo = useMemo(() => {
+  const redirectParam = useMemo(() => {
     const params = new URLSearchParams(location.search)
-    return params.get('redirect') || '/register/info'
+    return params.get('redirect')
   }, [location.search])
 
   useEffect(() => {
-    if (!loading && session) {
-      void navigate(redirectTo, { replace: true })
+    if (!loading && session && !roleLoading) {
+      const redirect = redirectParam || ''
+      // If user is admin, always land on /admin unless redirect explicitly points to /admin.
+      const next =
+        role === 'admin'
+          ? redirect.startsWith('/admin')
+            ? redirect
+            : '/admin'
+          : redirect || '/register/info'
+      void navigate(next, { replace: true })
     }
-  }, [loading, navigate, redirectTo, session])
+  }, [loading, navigate, redirectParam, role, roleLoading, session])
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -79,7 +87,7 @@ export function AuthPage() {
       if (mode === 'login') {
         await withTimeout(login(trimmedEmail, password), AUTH_TIMEOUT_MS, 'Login timed out. Please try again.')
         toast.success('Welcome back!')
-        navigate(redirectTo, { replace: true })
+        // Navigation happens after session+role resolves.
       } else {
         await withTimeout(
           register(trimmedEmail, password, trimmedFullName),

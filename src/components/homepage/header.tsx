@@ -14,7 +14,7 @@ const navItems = [
 
 export function Header() {
   const [mobileOpen, setMobileOpen] = useState(false)
-  const { session, logout } = useAuth()
+  const { session, logout, role } = useAuth()
   const showPendingPageToast = () => {
     toast.info('Oops! This page is not created yet.')
   }
@@ -38,40 +38,53 @@ export function Header() {
 
         <div className="ml-auto flex items-center gap-3">
           <nav className="hidden items-center gap-1 text-sm font-medium md:flex" aria-label="Main navigation">
-            {navItems.map((item) =>
-              item.pending ? (
-                <button
-                  key={item.label}
-                  type="button"
-                  className="rounded-md px-3 py-2 text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900"
-                  onClick={showPendingPageToast}
-                >
-                  {item.label}
-                </button>
-              ) : item.to.startsWith('#') ? (
-                <a
-                  key={item.label}
-                  href={item.to}
-                  className="rounded-md px-3 py-2 text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900"
-                >
-                  {item.label}
-                </a>
-              ) : (
+            {role === 'admin'
+              ? (
                 <NavLink
-                  key={item.label}
-                  to={item.to}
+                  to="/admin"
                   className={({ isActive }) =>
                     `rounded-md px-3 py-2 transition-colors ${
-                      isActive
-                        ? 'bg-slate-900 text-white'
-                        : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                      isActive ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                     }`
                   }
                 >
-                  {item.label}
+                  Admin
                 </NavLink>
-              ),
-            )}
+              )
+              : navItems.map((item) =>
+                  item.pending ? (
+                    <button
+                      key={item.label}
+                      type="button"
+                      className="rounded-md px-3 py-2 text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900"
+                      onClick={showPendingPageToast}
+                    >
+                      {item.label}
+                    </button>
+                  ) : item.to.startsWith('#') ? (
+                    <a
+                      key={item.label}
+                      href={item.to}
+                      className="rounded-md px-3 py-2 text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900"
+                    >
+                      {item.label}
+                    </a>
+                  ) : (
+                    <NavLink
+                      key={item.label}
+                      to={item.to}
+                      className={({ isActive }) =>
+                        `rounded-md px-3 py-2 transition-colors ${
+                          isActive
+                            ? 'bg-slate-900 text-white'
+                            : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                        }`
+                      }
+                    >
+                      {item.label}
+                    </NavLink>
+                  ),
+                )}
           </nav>
 
           {session ? (
@@ -106,42 +119,56 @@ export function Header() {
       {mobileOpen && (
         <nav className="border-t border-slate-200 bg-white px-4 py-3 md:hidden" aria-label="Mobile navigation">
           <div className="flex flex-col gap-1">
-            {navItems.map((item) =>
-              item.pending ? (
-                <button
-                  key={item.label}
-                  type="button"
-                  className="w-full rounded-md px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-100 hover:text-slate-900"
-                  onClick={() => {
-                    showPendingPageToast()
-                    setMobileOpen(false)
-                  }}
-                >
-                  {item.label}
-                </button>
-              ) : item.to.startsWith('#') ? (
-                <a
-                  key={item.label}
-                  href={item.to}
-                  className="rounded-md px-3 py-2 text-sm text-slate-700 hover:bg-slate-100 hover:text-slate-900"
-                  onClick={() => setMobileOpen(false)}
-                >
-                  {item.label}
-                </a>
-              ) : (
-                <NavLink
-                  key={item.label}
-                  to={item.to}
-                  className={({ isActive }) =>
-                    `rounded-md px-3 py-2 text-sm ${
-                      isActive ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
-                    }`
-                  }
-                  onClick={() => setMobileOpen(false)}
-                >
-                  {item.label}
-                </NavLink>
-              ),
+            {role === 'admin' ? (
+              <NavLink
+                to="/admin"
+                className={({ isActive }) =>
+                  `rounded-md px-3 py-2 text-sm ${
+                    isActive ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
+                  }`
+                }
+                onClick={() => setMobileOpen(false)}
+              >
+                Admin
+              </NavLink>
+            ) : (
+              navItems.map((item) =>
+                item.pending ? (
+                  <button
+                    key={item.label}
+                    type="button"
+                    className="w-full rounded-md px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-100 hover:text-slate-900"
+                    onClick={() => {
+                      showPendingPageToast()
+                      setMobileOpen(false)
+                    }}
+                  >
+                    {item.label}
+                  </button>
+                ) : item.to.startsWith('#') ? (
+                  <a
+                    key={item.label}
+                    href={item.to}
+                    className="rounded-md px-3 py-2 text-sm text-slate-700 hover:bg-slate-100 hover:text-slate-900"
+                    onClick={() => setMobileOpen(false)}
+                  >
+                    {item.label}
+                  </a>
+                ) : (
+                  <NavLink
+                    key={item.label}
+                    to={item.to}
+                    className={({ isActive }) =>
+                      `rounded-md px-3 py-2 text-sm ${
+                        isActive ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
+                      }`
+                    }
+                    onClick={() => setMobileOpen(false)}
+                  >
+                    {item.label}
+                  </NavLink>
+                ),
+              )
             )}
             <div className="mt-2 border-t border-slate-200 pt-2">
               {session ? (

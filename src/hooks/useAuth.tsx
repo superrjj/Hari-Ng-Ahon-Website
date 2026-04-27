@@ -13,6 +13,7 @@ interface AuthContextValue {
   session: Session | null
   role: UserRole
   loading: boolean
+  roleLoading: boolean
   login: (email: string, password: string) => Promise<void>
   register: (email: string, password: string, fullName: string) => Promise<void>
   resendConfirmation: (email: string) => Promise<void>
@@ -24,6 +25,8 @@ const AuthContext = createContext<AuthContextValue | null>(null)
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
+  const [dbRole, setDbRole] = useState<UserRole | null>(null)
+  const [roleLoading, setRoleLoading] = useState(false)
 
   useEffect(() => {
     void supabase.auth.getSession().then(({ data }) => {
@@ -38,7 +41,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => listener.subscription.unsubscribe()
   }, [])
 
+  useEffect(() => {
+    const userId = session?.user?.id
+    if (!userId) {
+      setDbRole(null)
+      setRoleLoading(false)
+      return
+    }
+
+    let active = true
+    setRoleLoading(true)
+    void (async () => {
+      try {
+        const { data, error } = await supabase.from('users').select('role').eq('id', userId).maybeSingle()
+        if (!active) return
+        if (error) {
+          setDbRole(null)
+          setRoleLoading(false)
+          return
+        }
+        setDbRole(data?.role === 'admin' ? 'admin' : 'cyclist')
+        setRoleLoading(false)
+      } catch {
+        if (!active) return
+        setDbRole(null)
+        setRoleLoading(false)
+      }
+    })()
+
+    return () => {
+      active = false
+    }
+  }, [session?.user?.id])
+
   const role = useMemo<UserRole>(() => {
+    if (dbRole) return dbRole
     const token = session?.access_token
     if (!token) return 'cyclist'
     try {
@@ -47,13 +84,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       return 'cyclist'
     }
-  }, [session?.access_token])
+  }, [dbRole, session?.access_token])
 
   const value = useMemo<AuthContextValue>(
     () => ({
       session,
       role,
       loading,
+      roleLoading,
       login: async (email, password) => {
         const { error } = await supabase.auth.signInWithPassword({ email, password })
         if (error) throw error
@@ -80,7 +118,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (error) throw error
       },
     }),
-    [loading, role, session],
+    [loading, role, roleLoading, session],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

@@ -5,7 +5,7 @@ export function Hero() {
     <div className="bg-[#131313] text-[#e5e2e1]">
       <section className="relative flex min-h-[calc(100svh-5rem)] items-center overflow-hidden border-b border-[#464932] px-4 py-16 sm:px-6 sm:py-20 lg:px-8 lg:py-24">
         <img
-          src="/bg1.jpg"
+          src="/bg2.png"
           alt="Hero race"
           className="absolute inset-0 h-full w-full object-cover opacity-70"
         />
