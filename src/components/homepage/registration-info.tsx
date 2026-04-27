@@ -24,14 +24,14 @@ const mountainBikeCategories = [
 
 export function RegistrationInfo() {
   return (
-    <section className="bg-white px-4 py-10 text-slate-900">
-      <div className="mx-auto max-w-[760px] space-y-10">
-        <img src="/hna-banner-1.png" alt="Hari ng Ahon 2026 banner" />
+    <section className="bg-white px-4 py-8 text-slate-900 sm:px-6 sm:py-10 lg:px-8">
+      <div className="mx-auto w-full max-w-[760px] space-y-8 sm:space-y-10">
+        <img src="/hna-banner-1.png" alt="Hari ng Ahon 2026 banner" className="w-full rounded-lg object-cover" />
 
         <header className="space-y-3">
           <p className="text-sm font-medium text-slate-600">Hari ng Ahon 2026</p>
-          <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">Criterium & ITT</h1>
-          <dl className="grid grid-cols-1 gap-2 text-sm text-slate-800 md:grid-cols-3">
+          <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl md:text-4xl">Criterium & ITT</h1>
+          <dl className="grid grid-cols-1 gap-2 text-sm text-slate-800 sm:gap-3 md:grid-cols-3">
             <div className="rounded-md border border-slate-200 bg-white px-3 py-2 shadow-[0_12px_30px_-12px_rgba(15,23,42,0.28),0_6px_14px_-8px_rgba(15,23,42,0.2)]">
               <dt className="text-xs text-slate-500">Race date</dt>
               <dd className="font-medium">May 30–31, 2026</dd>
@@ -67,7 +67,7 @@ export function RegistrationInfo() {
           </p>
         </section>
 
-        <section className="space-y-4 rounded-lg border border-slate-200 bg-white p-5 shadow-[0_12px_30px_-12px_rgba(15,23,42,0.28),0_6px_14px_-8px_rgba(15,23,42,0.2)]">
+        <section className="space-y-4 rounded-lg border border-slate-200 bg-white p-4 shadow-[0_12px_30px_-12px_rgba(15,23,42,0.28),0_6px_14px_-8px_rgba(15,23,42,0.2)] sm:p-5">
           <h3 className="text-lg font-semibold">Registration fees</h3>
           <p className="text-sm text-slate-600">
             Race Inclusions: Finisher Shirt, Drawstring bag, Race Bib, Bike plate, Post-Race Meal, Finisher Medal
@@ -86,7 +86,7 @@ export function RegistrationInfo() {
         <section className="space-y-6">
           <h3 className="text-lg font-semibold">Categories</h3>
           <div className="grid gap-4 md:grid-cols-2">
-            <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-[0_12px_30px_-12px_rgba(15,23,42,0.28),0_6px_14px_-8px_rgba(15,23,42,0.2)]">
+            <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-[0_12px_30px_-12px_rgba(15,23,42,0.28),0_6px_14px_-8px_rgba(15,23,42,0.2)] sm:p-5">
               <h4 className="text-sm font-semibold">Road Bike</h4>
               <p className="mt-1 text-xs text-slate-500">Tire Size: &lt;32mm / &lt;1.25&quot;</p>
               <ul className="mt-3 space-y-1 text-sm text-slate-700">
@@ -95,7 +95,7 @@ export function RegistrationInfo() {
               ))}
               </ul>
             </div>
-            <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-[0_12px_30px_-12px_rgba(15,23,42,0.28),0_6px_14px_-8px_rgba(15,23,42,0.2)]">
+            <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-[0_12px_30px_-12px_rgba(15,23,42,0.28),0_6px_14px_-8px_rgba(15,23,42,0.2)] sm:p-5">
               <h4 className="text-sm font-semibold">Mountain Bike</h4>
               <p className="mt-1 text-xs text-slate-500">Tire Size: &gt;50mm / 1.95&quot;</p>
               <ul className="mt-3 space-y-1 text-sm text-slate-700">
@@ -107,12 +107,12 @@ export function RegistrationInfo() {
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
-            <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-[0_12px_30px_-12px_rgba(15,23,42,0.28),0_6px_14px_-8px_rgba(15,23,42,0.2)]">
+            <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-[0_12px_30px_-12px_rgba(15,23,42,0.28),0_6px_14px_-8px_rgba(15,23,42,0.2)] sm:p-5">
               <h4 className="text-sm font-semibold">Gravel Bike</h4>
               <p className="mt-1 text-xs text-slate-500">Tire Size: 33–49mm / 1.3–1.9&quot;</p>
               <p className="mt-3 text-sm text-slate-700">Open Gravel Bike</p>
             </div>
-            <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-[0_12px_30px_-12px_rgba(15,23,42,0.28),0_6px_14px_-8px_rgba(15,23,42,0.2)]">
+            <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-[0_12px_30px_-12px_rgba(15,23,42,0.28),0_6px_14px_-8px_rgba(15,23,42,0.2)] sm:p-5">
               <h4 className="text-sm font-semibold">Mixed</h4>
               <ul className="mt-3 space-y-1 text-sm text-slate-700">
                 <li>Open / Elite Women</li>
@@ -126,7 +126,7 @@ export function RegistrationInfo() {
         <div className="pt-2">
           <Link
             to="/register/form"
-            className="inline-flex items-center rounded-md bg-[#cfae3f] px-5 py-2.5 text-sm font-semibold text-black transition hover:bg-[#dab852]"
+            className="inline-flex w-full items-center justify-center rounded-md bg-[#cfae3f] px-5 py-2.5 text-sm font-semibold text-black transition hover:bg-[#dab852] sm:w-auto"
           >
             Next
           </Link>

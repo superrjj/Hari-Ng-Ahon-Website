@@ -35,7 +35,7 @@ const mountainBikeCategories = [
 
 const shirtSizes = ['XS', 'S', 'M', 'L', 'XL']
 const cardClass =
-  'rounded-xl border border-slate-200 bg-white p-5 shadow-[0_12px_30px_-12px_rgba(15,23,42,0.28),0_6px_14px_-8px_rgba(15,23,42,0.2)]'
+  'rounded-xl border border-slate-200 bg-white p-4 shadow-[0_12px_30px_-12px_rgba(15,23,42,0.28),0_6px_14px_-8px_rgba(15,23,42,0.2)] sm:p-5'
 
 export function RegistrationForm() {
   const navigate = useNavigate()
@@ -136,16 +136,16 @@ export function RegistrationForm() {
   }
 
   return (
-    <section className="bg-white px-4 py-10 text-slate-900">
-      <div className="mx-auto max-w-[760px] space-y-6">
-        <img src="/hna-banner-1.png" alt="Hari ng Ahon 2026 banner" />
+    <section className="bg-white px-4 py-8 text-slate-900 sm:px-6 sm:py-10 lg:px-8">
+      <div className="mx-auto w-full max-w-[760px] space-y-5 sm:space-y-6">
+        <img src="/hna-banner-1.png" alt="Hari ng Ahon 2026 banner" className="w-full rounded-lg object-cover" />
 
         <Link to="/register/info" className="inline-flex items-center gap-2 text-sm text-slate-600 hover:text-slate-900">
           &larr; Back
         </Link>
 
         <div className="space-y-1">
-          <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">Registration</h1>
+          <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl md:text-4xl">Registration</h1>
           <p className="text-sm text-slate-600">Fill up the rider information and choose your category.</p>
         </div>
 
@@ -160,7 +160,7 @@ export function RegistrationForm() {
           />
           <div className="space-y-2">
             <label className="text-sm font-semibold text-slate-900">Event <span className="text-rose-500">*</span></label>
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-2 sm:gap-2.5">
               <button
                 type="button"
                 onClick={() => setEventKey('criterium')}
@@ -317,7 +317,7 @@ export function RegistrationForm() {
                 key={size}
                 type="button"
                 onClick={() => setShirtSize(size)}
-                className={`rounded-md border px-3 py-2 text-sm ${
+                className={`min-w-[3rem] rounded-md border px-3 py-2 text-sm sm:min-w-[3.25rem] ${
                   shirtSize === size
                     ? 'border-[#cfae3f] bg-[#fff6d6] text-slate-900'
                     : 'border-slate-300 bg-white text-slate-700 hover:text-slate-900'
@@ -337,7 +337,7 @@ export function RegistrationForm() {
             type="button"
             onClick={() => void onSubmit()}
             disabled={submitting}
-            className="inline-flex items-center rounded-md bg-[#cfae3f] px-5 py-2.5 text-sm font-semibold text-black transition hover:bg-[#dab852] disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex w-full items-center justify-center rounded-md bg-[#cfae3f] px-5 py-2.5 text-sm font-semibold text-black transition hover:bg-[#dab852] disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
           >
             {submitting ? 'Saving…' : 'Next'}
           </button>
@@ -370,7 +370,7 @@ function Field({
         type={type}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
-        className={`w-full rounded-md border bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-[#cfae3f] ${
+        className={`w-full rounded-md border bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-[#cfae3f] sm:py-2 ${
           error ? 'border-rose-400' : 'border-slate-300'
         }`}
       />
@@ -400,7 +400,7 @@ function SelectField({
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className={`w-full rounded-md border bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-[#cfae3f] ${
+        className={`w-full rounded-md border bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-[#cfae3f] sm:py-2 ${
           error ? 'border-rose-400' : 'border-slate-300'
         }`}
       >
