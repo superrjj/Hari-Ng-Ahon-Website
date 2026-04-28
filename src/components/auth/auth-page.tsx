@@ -38,6 +38,22 @@ export function AuthPage() {
     return params.get('redirect')
   }, [location.search])
 
+  const modeParam = useMemo(() => {
+    const params = new URLSearchParams(location.search)
+    return params.get('mode')
+  }, [location.search])
+
+  useEffect(() => {
+    if (modeParam === 'login' || modeParam === 'signup') {
+      setMode(modeParam)
+      setPendingVerificationEmail('')
+      setFormError('')
+      setEmailError('')
+      setPasswordError('')
+      setFullNameError('')
+    }
+  }, [modeParam])
+
   useEffect(() => {
     if (!loading && session && !roleLoading) {
       const redirect = redirectParam || ''
