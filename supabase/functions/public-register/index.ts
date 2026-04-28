@@ -18,6 +18,7 @@ function textResponse(message: string, status: number) {
 type Body = {
   raceType: 'criterium' | 'itt'
   registrantEmail: string
+  registrationFee?: number
   rider: {
     firstName: string
     lastName: string
@@ -39,6 +40,15 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
   if (req.method !== 'POST') return textResponse('Method not allowed', 405)
 
+  const authHeader = req.headers.get('authorization') || req.headers.get('Authorization')
+  if (!authHeader) return textResponse(JSON.stringify({ code: 'UNAUTHORIZED_NO_AUTH_HEADER', message: 'Missing authorization header' }), 401)
+  const jwt = authHeader.replace(/^Bearer\s+/i, '').trim()
+  const { data: authData, error: authError } = await supabase.auth.getUser(jwt)
+  if (authError || !authData?.user?.id) {
+    return textResponse(JSON.stringify({ code: 'UNAUTHORIZED_INVALID_TOKEN', message: 'Invalid or expired token' }), 401)
+  }
+  const userId = authData.user.id
+
   let body: Body
   try {
     body = await req.json()
@@ -57,6 +67,9 @@ Deno.serve(async (req) => {
     return textResponse('Missing required fields', 400)
   }
 
+  const requestedFee = Number(body.registrationFee)
+  const effectiveFee = Number.isFinite(requestedFee) && requestedFee > 0 ? requestedFee : null
+
   const { data: event, error: eventError } = await supabase
     .from('events')
     .select('id, registration_fee')
@@ -74,27 +87,33 @@ Deno.serve(async (req) => {
   // an existing public registration for the same email + event.
   const { data: existingRegistration, error: existingRegistrationError } = await supabase
     .from('registration_forms')
-    .select('id')
+    .select('id, status')
     .eq('event_id', event.id)
-    .eq('registrant_email', normalizedEmail)
-    .is('user_id', null)
+    .eq('user_id', userId)
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()
 
   if (existingRegistrationError) return textResponse(existingRegistrationError.message, 500)
   if (existingRegistration?.id) {
+    if (effectiveFee && ['draft', 'pending_payment', 'payment_processing'].includes(existingRegistration.status)) {
+      const { error: feeUpdateError } = await supabase
+        .from('registration_forms')
+        .update({ registration_fee: effectiveFee, updated_at: new Date().toISOString() })
+        .eq('id', existingRegistration.id)
+      if (feeUpdateError) return textResponse(feeUpdateError.message, 500)
+    }
     return Response.json({ registrationId: existingRegistration.id, reused: true }, { headers: corsHeaders })
   }
 
   const { data: form, error: formError } = await supabase
     .from('registration_forms')
     .insert({
-      user_id: null,
+      user_id: userId,
       event_id: event.id,
       race_category_id: null,
       status: 'pending_payment',
-      registration_fee: Number(event.registration_fee ?? 0),
+      registration_fee: effectiveFee ?? Number(event.registration_fee ?? 0),
       registrant_email: normalizedEmail,
       submitted_at: new Date().toISOString(),
     })

@@ -1,51 +1,151 @@
 import type { ReactNode } from 'react'
-import { Link, NavLink } from 'react-router-dom'
+import { useEffect, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { Bell, LogOut, Menu, ChevronDown } from 'lucide-react'
+import { useAuth } from '../../hooks/useAuth'
+import { supabase } from '../../lib/supabase'
+import { AdminSidebar } from './admin-sidebar'
 
-export function AdminLayout({ children }: { children: ReactNode }) {
+export function AdminLayout({ children, title = 'Dashboard', subtitle }: { children: ReactNode; title?: string; subtitle?: string }) {
+  const [mobileOpen, setMobileOpen] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [fullName, setFullName] = useState('')
+  const navigate = useNavigate()
+  const { logout, session } = useAuth()
+  const menuRef = useRef<HTMLDivElement | null>(null)
+
+  const onLogout = async () => {
+    await logout()
+    navigate('/', { replace: true })
+  }
+
+  const displayName = session?.user?.email?.split('@')[0] ?? 'Admin'
+  const headerName = fullName || session?.user?.user_metadata?.full_name || displayName
+
+  useEffect(() => {
+    if (!menuOpen) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMenuOpen(false)
+    }
+    const onPointerDown = (e: PointerEvent) => {
+      const el = menuRef.current
+      if (!el) return
+      if (e.target instanceof Node && !el.contains(e.target)) setMenuOpen(false)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('pointerdown', onPointerDown)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('pointerdown', onPointerDown)
+    }
+  }, [menuOpen])
+
+  useEffect(() => {
+    const userId = session?.user?.id
+    if (!userId) {
+      setFullName('')
+      return
+    }
+    let active = true
+    void (async () => {
+      const { data } = await supabase.from('users').select('full_name').eq('id', userId).maybeSingle()
+      if (!active) return
+      setFullName(data?.full_name ?? '')
+    })()
+    return () => {
+      active = false
+    }
+  }, [session?.user?.id])
+
   return (
-    <section className="bg-slate-50 px-4 py-6 text-slate-900 sm:px-6 lg:px-8">
-      <div className="mx-auto w-full max-w-7xl">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="space-y-1">
-            <p className="text-sm text-slate-500">Hari ng Ahon 2026</p>
-            <h1 className="text-2xl font-semibold tracking-tight">Admin</h1>
+    <div className="flex h-full overflow-hidden">
+      {/* Mobile overlay */}
+      {mobileOpen ? (
+        <button
+          type="button"
+          aria-label="Close menu"
+          className="fixed inset-0 z-40 bg-black/40 lg:hidden"
+          onClick={() => setMobileOpen(false)}
+        />
+      ) : null}
+
+      <AdminSidebar mobileOpen={mobileOpen} onCloseMobile={() => setMobileOpen(false)} />
+
+      <div className="flex min-w-0 min-h-0 flex-1 flex-col">
+        <header className="z-30 flex shrink-0 items-center justify-between gap-4 border-b border-slate-200/80 bg-white px-4 py-3 shadow-sm sm:px-6">
+          <div className="flex min-w-0 items-center gap-3">
+            <button
+              type="button"
+              className="rounded-lg border border-slate-200 p-2 text-slate-700 hover:bg-slate-50 lg:hidden"
+              onClick={() => setMobileOpen(true)}
+              aria-label="Open menu"
+            >
+              <Menu className="h-5 w-5" />
+            </button>
+            <div className="min-w-0">
+              <h1 className="truncate text-lg font-semibold text-slate-900 sm:text-xl">{title}</h1>
+              <p className="truncate text-xs text-slate-500 sm:text-sm">
+                {subtitle ?? `Welcome back, ${headerName}! Here's what's happening with your events.`}
+              </p>
+            </div>
           </div>
-          <Link to="/" className="text-sm font-medium text-slate-700 hover:text-slate-900">
-            Back to site
-          </Link>
-        </div>
-
-        <div className="mt-5 flex flex-col gap-6 lg:flex-row">
-          <aside className="w-full shrink-0 lg:w-64">
-            <nav className="rounded-xl border border-slate-200 bg-white p-3">
-              <NavLink
-                to="/admin"
-                end
-                className={({ isActive }) =>
-                  `block rounded-md px-3 py-2 text-sm font-medium transition ${
-                    isActive ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'
-                  }`
-                }
+          <div className="flex shrink-0 items-center gap-2 sm:gap-4">
+            <button
+              type="button"
+              className="relative rounded-lg p-2 text-slate-600 hover:bg-slate-100"
+              aria-label="Notifications"
+            >
+              <Bell className="h-5 w-5" />
+              <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white">
+                3
+              </span>
+            </button>
+            <div className="hidden h-8 w-px bg-slate-200 sm:block" />
+            <div className="relative" ref={menuRef}>
+              <button
+                type="button"
+                onClick={() => setMenuOpen((v) => !v)}
+                aria-haspopup="menu"
+                aria-expanded={menuOpen}
+                className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 py-1 pl-1 pr-2 transition hover:bg-slate-100 sm:pr-3"
               >
-                Dashboard
-              </NavLink>
-              <NavLink
-                to="/admin/registrations"
-                className={({ isActive }) =>
-                  `mt-1 block rounded-md px-3 py-2 text-sm font-medium transition ${
-                    isActive ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'
-                  }`
-                }
-              >
-                Registrations
-              </NavLink>
-            </nav>
-          </aside>
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#1e4a8e] text-xs font-semibold text-white">
+                  {displayName.slice(0, 2).toUpperCase()}
+                </div>
+                <div className="hidden min-w-0 text-left sm:block">
+                  <p className="truncate text-sm font-medium text-slate-900">{headerName}</p>
+                  <p className="truncate text-xs text-slate-500">{session?.user?.email ?? '—'}</p>
+                </div>
+                <ChevronDown
+                  className={`h-4 w-4 text-slate-500 transition-transform ${menuOpen ? 'rotate-180' : ''}`}
+                />
+              </button>
 
-          <main className="min-w-0 flex-1">{children}</main>
-        </div>
+              <div
+                role="menu"
+                className={`absolute right-0 top-[calc(100%+8px)] z-40 w-48 origin-top-right rounded-xl border border-slate-200 bg-white p-1 shadow-lg transition ${
+                  menuOpen ? 'scale-100 opacity-100' : 'pointer-events-none scale-95 opacity-0'
+                }`}
+              >
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-rose-600 hover:bg-rose-50"
+                  onClick={() => {
+                    setMenuOpen(false)
+                    void onLogout()
+                  }}
+                >
+                  <LogOut className="h-4 w-4" />
+                  Logout
+                </button>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        <main className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">{children}</main>
       </div>
-    </section>
+    </div>
   )
 }
-

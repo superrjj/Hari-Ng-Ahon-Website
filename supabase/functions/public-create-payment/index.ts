@@ -42,6 +42,7 @@ async function createPayMongoCheckoutSession(args: {
             currency: 'PHP',
             amount: Math.round(Number(args.amount ?? 0) * 100),
             name: 'Hari ng Ahon Registration',
+            description: `Registration payment for ${args.registrationId}`,
             quantity: 1,
           },
         ],

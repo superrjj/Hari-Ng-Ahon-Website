@@ -6,7 +6,10 @@ export interface AdminRegistrationRow {
   id: string
   created_at?: string
   race_type?: string | null
+  discipline?: string | null
+  age_category?: string | null
   event_title?: string | null
+  rider_full_name?: string | null
   registrant_email?: string | null
   status?: string | null
   payment_status?: PaymentStatus | string | null
@@ -68,6 +71,23 @@ export const adminApi = {
       return [] as AdminRegistrationRow[]
     }
 
+    // 1.5) Rider full names for table display
+    const { data: riderDetails, error: riderDetailsError } = await supabase
+      .from('registration_rider_details')
+      .select('registration_id, first_name, last_name, discipline, age_category')
+      .in('registration_id', registrationIds)
+
+    if (riderDetailsError) throw riderDetailsError
+    const riderByReg = new Map<string, { first_name?: string | null; last_name?: string | null; discipline?: string | null; age_category?: string | null }>()
+    for (const rider of riderDetails ?? []) {
+      riderByReg.set(rider.registration_id, {
+        first_name: rider.first_name ?? null,
+        last_name: rider.last_name ?? null,
+        discipline: rider.discipline ?? null,
+        age_category: rider.age_category ?? null,
+      })
+    }
+
     // 2) Latest payment order per registration (paymongo)
     const { data: orders, error: ordersError } = await supabase
       .from('payment_orders')
@@ -103,11 +123,16 @@ export const adminApi = {
       const order = latestOrderByReg.get(f.id)
       const tx = order ? latestTxByOrder.get(order.id) : undefined
       const payment_status = normalizePaymentStatus({ orderStatus: order?.status, txStatus: tx?.status })
+      const rider = riderByReg.get(f.id)
+      const riderFullName = [rider?.first_name, rider?.last_name].filter(Boolean).join(' ').trim()
       return {
         id: f.id,
         created_at: f.created_at,
         race_type: f.event?.race_type ?? null,
+        discipline: rider?.discipline ?? null,
+        age_category: rider?.age_category ?? null,
         event_title: f.event?.title ?? null,
+        rider_full_name: riderFullName || null,
         registrant_email: f.registrant_email ?? null,
         status: f.status ?? null,
         payment_status,

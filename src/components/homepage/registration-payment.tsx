@@ -1,5 +1,5 @@
-import { useMemo, useRef, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { registrationService } from '../../services/registrationService'
 
 // ─── Step config ──────────────────────────────────────────────────────────────
@@ -303,7 +303,9 @@ function StepModal({ step, stepNumber, totalSteps, onAgree, onClose }: StepModal
 
 export function RegistrationPayment() {
   const [params] = useSearchParams()
+  const navigate = useNavigate()
   const registrationId = params.get('registrationId')
+  const paymentState = params.get('payment')
 
   // null = closed, 0 = waiver modal, 1 = rules modal
   const [modalStep, setModalStep] = useState<number | null>(null)
@@ -315,6 +317,19 @@ export function RegistrationPayment() {
     () => `HNA-${registrationId ?? 'NA'}-${Date.now()}`,
     [registrationId],
   )
+
+  useEffect(() => {
+    if (!paymentState) return
+    if (paymentState === 'success') {
+      const next = registrationId
+        ? `/register/payment-success?registrationId=${encodeURIComponent(registrationId)}`
+        : '/register/payment-success'
+      const timer = window.setTimeout(() => {
+        void navigate(next, { replace: true })
+      }, 1800)
+      return () => window.clearTimeout(timer)
+    }
+  }, [navigate, paymentState, registrationId])
 
   const handleCheckboxClick = () => {
     if (agreed) {
@@ -348,7 +363,7 @@ export function RegistrationPayment() {
     try {
       const payment = await registrationService.createPaymentOrder({
         registrationId,
-        amount: 1000,
+        amount: 1,
         merchantReference,
         acceptLiability: true,
         acceptRules: true,
@@ -365,7 +380,22 @@ export function RegistrationPayment() {
   return (
     <>
       <section className="bg-white px-4 py-10 text-slate-900">
-        <div className="mx-auto max-w-760px space-y-6">
+        <div className="mx-auto max-w-[760px] space-y-6">
+          {paymentState === 'cancelled' ? (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              Payment was cancelled. You can try again when ready.
+            </div>
+          ) : null}
+          {paymentState === 'failed' ? (
+            <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">
+              Payment failed. Please try again or use a different payment method.
+            </div>
+          ) : null}
+          {paymentState === 'success' ? (
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+              Payment submitted successfully. Redirecting to your post-payment page...
+            </div>
+          ) : null}
           {/* Heading */}
           <div className="space-y-1">
             <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">Payment</h1>
@@ -376,11 +406,11 @@ export function RegistrationPayment() {
           <div className="rounded-lg border border-slate-200 bg-white p-5 text-sm text-slate-800">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-slate-600">Registration fee</p>
-              <p className="font-medium">₱1,000.00 (Early registration)</p>
+              <p className="font-medium">₱1.00 (Testing fee)</p>
             </div>
             <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3">
               <p className="text-slate-600">Total</p>
-              <p className="text-lg font-semibold text-slate-900">₱1,000.00</p>
+              <p className="text-lg font-semibold text-slate-900">₱1.00</p>
             </div>
           </div>
 
@@ -392,6 +422,9 @@ export function RegistrationPayment() {
               registration stays pending until webhook confirmation marks the
               payment as paid.
             </p>
+            {registrationId ? (
+              <p className="text-xs text-slate-500">Registration reference: <span className="font-mono">{registrationId}</span></p>
+            ) : null}
           </div>
 
           {/* Agree row — matches original design exactly */}

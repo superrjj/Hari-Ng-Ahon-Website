@@ -31,7 +31,7 @@ export function Header() {
   return (
     <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 shadow-sm backdrop-blur">
       <div className="mx-auto flex max-w-7xl items-center gap-4 px-4 py-3">
-        <Link to="/" className="inline-flex items-center gap-3">
+        <Link to={role === 'admin' ? '/admin' : '/'} className="inline-flex items-center gap-3">
           <img src="/hna-logo.jpg" alt="Hari ng Ahon" className="h-15 w-auto" />
           <span className="text-base font-semibold text-slate-900">HARI NG AHON 2026</span>
         </Link>

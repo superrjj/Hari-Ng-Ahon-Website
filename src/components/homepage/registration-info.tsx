@@ -78,7 +78,7 @@ export function RegistrationInfo() {
           </p>
           <div className="flex flex-wrap items-center gap-3">
             <span className="rounded-md bg-[#cfae3f] px-3 py-1 text-sm font-semibold text-black">Tier 1</span>
-            <span className="text-sm text-slate-800">₱1000 (Early registration)</span>
+            <span className="text-sm text-slate-800">₱1 (Testing fee)</span>
             <span className="text-xs text-slate-500">Current</span>
           </div>
           <p className="text-xs text-slate-500">

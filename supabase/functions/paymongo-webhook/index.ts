@@ -74,6 +74,20 @@ function normalizeStatus(paymongoStatus: string | undefined) {
   }
 }
 
+function normalizeRegistrationStatus(paymentStatus: string) {
+  switch (paymentStatus) {
+    case 'paid':
+      return 'paid'
+    case 'failed':
+    case 'expired':
+      return 'pending_payment'
+    case 'processing':
+    case 'pending':
+    default:
+      return 'payment_processing'
+  }
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method !== 'POST') {
     return new Response('Method not allowed', { status: 405 })
@@ -151,11 +165,26 @@ Deno.serve(async (req: Request) => {
 
   const { error: orderUpdateError } = await supabase
     .from('payment_orders')
-    .update({ status: normalizedStatus })
+    .update({
+      status: normalizedStatus,
+      updated_at: new Date().toISOString(),
+    })
     .eq('id', order.id)
 
   if (orderUpdateError) {
     return new Response(`Failed to update payment order: ${orderUpdateError.message}`, { status: 500 })
+  }
+
+  const { error: registrationUpdateError } = await supabase
+    .from('registration_forms')
+    .update({
+      status: normalizeRegistrationStatus(normalizedStatus),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', order.registration_id)
+
+  if (registrationUpdateError) {
+    return new Response(`Failed to update registration status: ${registrationUpdateError.message}`, { status: 500 })
   }
 
   const { error: webhookProcessedError } = await supabase

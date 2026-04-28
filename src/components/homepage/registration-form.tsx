@@ -108,7 +108,7 @@ export function RegistrationForm() {
     try {
       const { registrationId } = await registrationService.createRegistration({
         raceType: eventKey,
-        registrationFee: 1000,
+        registrationFee: 1,
         registrantEmail: form.email,
         rider: {
           firstName: form.firstName,
