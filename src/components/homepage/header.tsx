@@ -38,7 +38,7 @@ export function Header() {
           to={role === 'admin' ? '/admin' : '/'}
           className="inline-flex items-center gap-2.5 transition-opacity hover:opacity-85"
         >
-          <img src="/all_out_multisports.png" alt="All Out Multisports" className="h-14 w-auto" />
+          <img src="/all_out_multisports_1.png" alt="All Out Multisports" className="h-14 w-auto" />
           <div className="h-7 w-px bg-slate-200" aria-hidden="true" />
           <img src="/hna-logo.png" alt="Hari Ng Ahon" className="h-14 w-auto" />
         </Link>

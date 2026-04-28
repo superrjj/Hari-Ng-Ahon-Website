@@ -161,7 +161,16 @@ export function AuthPage() {
     <section className="flex h-[calc(100svh-4.5rem)] items-center overflow-hidden bg-slate-50 px-3 py-4 text-slate-900 sm:px-6 sm:py-6 lg:px-8">
       <div className="mx-auto w-full max-w-md space-y-5 rounded-xl border border-slate-200 bg-white p-4 shadow-[0_12px_30px_-12px_rgba(15,23,42,0.28),0_6px_14px_-8px_rgba(15,23,42,0.2)] sm:space-y-6 sm:p-6">
         <div className="space-y-1 text-center">
-          <p className="text-sm text-slate-500">Hari ng Ahon 2026</p>
+          <div className="flex justify-center pb-2">
+            <img
+              src="/all_out_multisports.png"
+              alt="All Out Multisports"
+              className="h-14 w-auto sm:h-16"
+              loading="eager"
+              decoding="async"
+            />
+          </div>
+          <p className="text-sm text-slate-700">All Out Multisports</p>
           <h1 className="text-xl font-semibold tracking-tight sm:text-3xl">
             {mode === 'login' ? 'Login' : 'Create account'}
           </h1>
