@@ -67,88 +67,156 @@ const STEPS = [
       </div>
     ),
   },
-  {
+ {
     key: 'rules' as const,
     title: 'Race Rules',
     content: (
-      <div className="space-y-3 text-sm leading-relaxed text-slate-700">
+      <div className="space-y-6 text-sm leading-relaxed text-slate-700">
         <p>
           These rules are intended to promote sportsmanship, equality, and fair
           play, while prioritizing the safety of all participants. Any
           participant who gains an unfair advantage, violates these rules, or
           compromises safety may be penalized or disqualified.
         </p>
-        <div>
-          <p className="mb-1 font-semibold text-slate-900">A) General Conduct</p>
-          <ul className="list-disc space-y-1 pl-5">
+
+        <hr className="border-slate-200" />
+
+        {/* A) General Conduct */}
+        <div className="space-y-2">
+          <p className="font-bold text-slate-900">A) General Conduct</p>
+          <p>All participants:</p>
+          <ol className="list-decimal space-y-2 pl-6">
             <li>Must practice good sportsmanship at all times and be responsible for their own safety and that of others.</li>
             <li>Should know, understand, and follow all published Race Rules.</li>
             <li>Must obey the instructions of race officials, marshals, and law enforcement.</li>
-            <li>Must remain alert, especially in technical sections, sharp turns, and descents.</li>
+            <li>The race route may be closed to traffic, but riders must remain alert, especially in technical sections, sharp turns, and descents.</li>
             <li>Must treat fellow participants, officials, volunteers, and spectators with respect and courtesy.</li>
             <li>Must avoid using abusive or offensive language.</li>
             <li>Must inform a race official immediately if withdrawing from the race.</li>
-            <li>Must complete the entire official race route without receiving outside assistance except from authorized race personnel.</li>
+            <li>Must complete the <strong>entire official race route</strong> without receiving outside assistance except from authorized race personnel.</li>
             <li>Must allow faster riders to pass without obstruction.</li>
             <li>Glass containers are not permitted on or near the course.</li>
-          </ul>
+          </ol>
         </div>
-        <div>
-          <p className="mb-1 font-semibold text-slate-900">B) Equipment</p>
-          <ul className="list-disc space-y-1 pl-5">
-            <li>Only human-powered bicycles in safe and working condition are allowed.</li>
-            <li>All bicycles must have functional front and rear brakes.</li>
-            <li>Minimum tire width for mountain bikes is 1.90 inches (if applicable).</li>
-            <li>Riders must wear an approved helmet at all times. Failure to do so will result in immediate disqualification.</li>
-          </ul>
+
+        <hr className="border-slate-200" />
+
+        {/* B) Equipment */}
+        <div className="space-y-2">
+          <p className="font-bold text-slate-900">B) Equipment</p>
+          <ol className="list-decimal space-y-2 pl-6">
+            <li>Only <strong>human-powered bicycles</strong> in safe and working condition are allowed.</li>
+            <li>All bicycles must have functional <strong>front and rear brakes</strong>.</li>
+            <li>Minimum tire width for mountain bikes is <strong>1.90 inches</strong> (if applicable).</li>
+            <li>Riders must wear an <strong>approved helmet</strong> at all times while on the course. Failure to do so will result in immediate disqualification.</li>
+          </ol>
         </div>
-        <div>
-          <p className="mb-1 font-semibold text-slate-900">C) Health &amp; Safety</p>
-          <ul className="list-disc space-y-1 pl-5">
-            <li>Participants must be in good health to participate.</li>
-            <li>By registering, participants declare they are physically capable of completing the event.</li>
-            <li>A pre-event health check is strongly encouraged.</li>
-          </ul>
+
+        <hr className="border-slate-200" />
+
+        {/* C) Health & Safety */}
+        <div className="space-y-2">
+          <p className="font-bold text-slate-900">C) Health &amp; Safety</p>
+          <ol className="list-decimal space-y-2 pl-6">
+            <li>Participants acknowledge that cycling events are physically demanding and must be in good health to participate.</li>
+            <li>By registering, participants declare that they are physically capable of completing the event.</li>
+            <li>A pre-event health check is strongly encouraged, especially for competitive races.</li>
+          </ol>
         </div>
-        <div>
-          <p className="mb-1 font-semibold text-slate-900">D) Eligibility</p>
-          <ul className="list-disc space-y-1 pl-5">
-            <li>Age category is determined by the participant's age on December 31 of the race year.</li>
-            <li>Minors must submit parent/guardian consent.</li>
+
+        <hr className="border-slate-200" />
+
+        {/* D) Eligibility */}
+        <div className="space-y-2">
+          <p className="font-bold text-slate-900">D) Eligibility</p>
+          <ol className="list-decimal space-y-2 pl-6">
+            <li>
+              Age category is determined by the participant's age on <strong>December 31</strong> of the race year.
+              <ul className="mt-1 list-[circle] space-y-1 pl-6">
+                <li>Example: Race Year – Birth Year = Age Category</li>
+              </ul>
+            </li>
+            <li>Minors must submit <strong>parent/guardian consent</strong>.</li>
             <li>Entering a category outside your correct age group will result in disqualification.</li>
-            <li>Race registrations are non-transferable.</li>
-            <li>Any misrepresentation of identity or details will result in immediate disqualification.</li>
-          </ul>
+            <li>Race registrations are <strong>non-transferable</strong>. Anyone caught using another person's registration will be disqualified and may be banned from future events.</li>
+            <li>Any misrepresentation of identity or details will result in <strong>immediate disqualification</strong> and forfeiture of awards/titles.</li>
+          </ol>
         </div>
-        <div>
-          <p className="mb-1 font-semibold text-slate-900">E) Prohibited Equipment</p>
-          <ul className="list-disc space-y-1 pl-5">
+
+        <hr className="border-slate-200" />
+
+        {/* E) Race Kit Claiming */}
+        <div className="space-y-2">
+          <p className="font-bold text-slate-900">E) Race Kit Claiming</p>
+          <ol className="list-decimal space-y-2 pl-6">
+            <li>A <strong>valid ID or Birth Certificate</strong> is required to claim a race kit.</li>
+            <li>Participants must claim their own kits at the designated place and time.</li>
+            <li>
+              Authorized representatives must present:
+              <ul className="mt-1 list-[circle] space-y-1 pl-6">
+                <li>The participant's valid ID</li>
+                <li>Signed authorization letter from the participant</li>
+                <li>Representative's valid ID</li>
+              </ul>
+            </li>
+          </ol>
+        </div>
+
+        <hr className="border-slate-200" />
+
+        {/* F) Prohibited Equipment */}
+        <div className="space-y-2">
+          <p className="font-bold text-slate-900">F) Prohibited Equipment</p>
+          <p>The following are <strong>not allowed</strong> during the race:</p>
+          <ul className="list-[circle] space-y-1 pl-6">
             <li>Headphones, headsets, or any listening devices</li>
-            <li>Use of mobile phones while riding</li>
-            <li>Glass containers</li>
             <li>Aerobars / Tri-bars (unless explicitly allowed)</li>
           </ul>
         </div>
-        <div>
-          <p className="mb-1 font-semibold text-slate-900">F) Outside Assistance</p>
+
+        <hr className="border-slate-200" />
+
+        {/* G) Outside Assistance */}
+        <div className="space-y-2">
+          <p className="font-bold text-slate-900">G) Outside Assistance</p>
           <p>No outside assistance is allowed except from official race personnel or aid stations.</p>
         </div>
-        <div>
-          <p className="mb-1 font-semibold text-slate-900">G) Protests</p>
-          <ul className="list-disc space-y-1 pl-5">
-            <li>Protests on eligibility must be made to the Race Organizer on the day of the event.</li>
-            <li>Protests on results/timing must be submitted in writing within three (3) days after the race.</li>
-            <li>A protest must be accompanied by a ₱2,000 deposit, refundable if upheld.</li>
-          </ul>
+
+        <hr className="border-slate-200" />
+
+        {/* H) Protests */}
+        <div className="space-y-2">
+          <p className="font-bold text-slate-900">H) Protests</p>
+          <ol className="list-decimal space-y-2 pl-6">
+            <li>Protests on eligibility must be made to the Race Organizer <strong>on the day of the event</strong>.</li>
+            <li>Protests on results/timing must be submitted <strong>in writing within three (3) days</strong> after the race.</li>
+            <li>A protest must be accompanied by a <strong>₱2,000 deposit</strong>, refundable if upheld. If denied, the deposit is forfeited.</li>
+            <li>
+              Protests must include:
+              <ul className="mt-1 list-[circle] space-y-1 pl-6">
+                <li>The alleged rule violation</li>
+                <li>Location &amp; time of incident</li>
+                <li>Names of persons involved</li>
+                <li>Statement or diagram of the incident</li>
+                <li>Names of witnesses (if any)</li>
+                <li>Proof or supporting documents (photos/videos if available)</li>
+              </ul>
+            </li>
+          </ol>
         </div>
-        <div>
-          <p className="mb-1 font-semibold text-slate-900">H) Event Changes &amp; Refunds</p>
-          <p>
-            The Organizer may modify, postpone, or cancel the event at any time
-            due to safety concerns, weather, or circumstances beyond their
-            control. All entry fees are non-refundable unless the Organizer
-            decides otherwise.
-          </p>
+
+        <hr className="border-slate-200" />
+
+        {/* I) Event Changes, Cancellation, and Refunds */}
+        <div className="space-y-2">
+          <p className="font-bold text-slate-900">I) Event Changes, Cancellation, and Refunds</p>
+          <ol className="list-decimal space-y-2 pl-6">
+            <li>The Organizer may, at its sole discretion, modify, postpone, or cancel the event at any time.</li>
+            <li>Changes may include, but are not limited to, adjustments to the race route, distance, schedule, categories, rules, or other event details.</li>
+            <li>Such changes may be made without prior notice and may occur due to safety concerns, adverse weather, government regulations, force majeure, or other circumstances beyond the Organizer's control.</li>
+            <li>In the event of modification, postponement, or cancellation, the Organizer shall not be liable for any loss, cost, or expense incurred by participants.</li>
+            <li>All entry fees are <strong>non-refundable</strong>, and no credits or transfers will be issued, unless the Organizer decides otherwise at its sole discretion.</li>
+          </ol>
         </div>
       </div>
     ),
@@ -195,7 +263,7 @@ function StepModal({ step, stepNumber, totalSteps, onAgree, onClose }: StepModal
           <button
             type="button"
             onClick={onClose}
-            className="ml-4 mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+            className="ml-4 mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-600"
             aria-label="Close"
           >
             ✕
@@ -297,7 +365,7 @@ export function RegistrationPayment() {
   return (
     <>
       <section className="bg-white px-4 py-10 text-slate-900">
-        <div className="mx-auto max-w-[760px] space-y-6">
+        <div className="mx-auto max-w-760px space-y-6">
           {/* Heading */}
           <div className="space-y-1">
             <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">Payment</h1>
