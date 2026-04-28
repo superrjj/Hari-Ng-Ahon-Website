@@ -69,6 +69,19 @@ function RequireAuth({ children, redirectTo }: { children: ReactNode; redirectTo
   return children
 }
 
+function PublicOnly({ children }: { children: ReactNode }) {
+  const { session, loading, role, roleLoading } = useAuth()
+  if (loading || (session && roleLoading)) {
+    return (
+      <Shell>
+        <section className="px-4 py-10 text-center text-sm text-slate-600">Checking session...</section>
+      </Shell>
+    )
+  }
+  if (session && role === 'admin') return <Navigate to="/admin" replace />
+  return children
+}
+
 function RequireAdmin({ children }: { children: ReactNode }) {
   const { session, loading, role, roleLoading } = useAuth()
   if (loading || (session && roleLoading)) {
@@ -91,16 +104,46 @@ export function AppRoutes() {
       <Route
         path="/home"
         element={
-          <Shell>
-            <Hero />
-          </Shell>
+          <PublicOnly>
+            <Shell>
+              <Hero />
+            </Shell>
+          </PublicOnly>
         }
       />
       <Route path="/auth" element={<Shell><AuthPage /></Shell>} />
-      <Route path="/register/info" element={<Shell><RegistrationInfo /></Shell>} />
-      <Route path="/register/form" element={<RequireAuth redirectTo="/register/form"><Shell><RegistrationForm /></Shell></RequireAuth>} />
-      <Route path="/register/payment" element={<RequireAuth redirectTo="/register/payment"><Shell><RegistrationPayment /></Shell></RequireAuth>} />
-      <Route path="/register/payment-success" element={<RequireAuth redirectTo="/register/payment-success"><Shell><RegistrationPaymentSuccess /></Shell></RequireAuth>} />
+      <Route
+        path="/register/info"
+        element={
+          <PublicOnly>
+            <Shell><RegistrationInfo /></Shell>
+          </PublicOnly>
+        }
+      />
+      <Route
+        path="/register/form"
+        element={
+          <PublicOnly>
+            <RequireAuth redirectTo="/register/form"><Shell><RegistrationForm /></Shell></RequireAuth>
+          </PublicOnly>
+        }
+      />
+      <Route
+        path="/register/payment"
+        element={
+          <PublicOnly>
+            <RequireAuth redirectTo="/register/payment"><Shell><RegistrationPayment /></Shell></RequireAuth>
+          </PublicOnly>
+        }
+      />
+      <Route
+        path="/register/payment-success"
+        element={
+          <PublicOnly>
+            <RequireAuth redirectTo="/register/payment-success"><Shell><RegistrationPaymentSuccess /></Shell></RequireAuth>
+          </PublicOnly>
+        }
+      />
 
       <Route
         path="/admin"
