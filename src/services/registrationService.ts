@@ -17,7 +17,7 @@ async function getEdgeFunctionErrorMessage(error: unknown, fallback: string): Pr
   return message?.trim() ? message : fallback
 }
 
-async function getAuthHeaders() {
+async function getAuthHeaders(): Promise<Record<string, string>>{
   const { data } = await supabase.auth.getSession()
   const token = data.session?.access_token
   return token ? { Authorization: `Bearer ${token}` } : {}
