@@ -13,6 +13,7 @@ function pill(status: string) {
 }
 
 export function AdminRegistrations() {
+  const PAGE_SIZE = 50
   const [rows, setRows] = useState<AdminRegistrationRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -21,6 +22,7 @@ export function AdminRegistrations() {
   const [paymentFilter, setPaymentFilter] = useState('all')
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [sortBy, setSortBy] = useState<'created_desc' | 'created_asc' | 'cyclist_asc' | 'cyclist_desc'>('created_desc')
+  const [page, setPage] = useState(1)
 
   useEffect(() => {
     let active = true
@@ -89,6 +91,26 @@ export function AdminRegistrations() {
   const pendingCount = filtered.filter((r) => String(r.payment_status ?? '').toLowerCase() === 'pending').length
   const approvedCount = filtered.filter((r) => String(r.status ?? '').toLowerCase() === 'approved').length
   const rejectedCount = filtered.filter((r) => String(r.status ?? '').toLowerCase() === 'rejected').length
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const currentPage = Math.min(page, totalPages)
+  const startIndex = filtered.length === 0 ? 0 : (currentPage - 1) * PAGE_SIZE
+  const paginated = filtered.slice(startIndex, startIndex + PAGE_SIZE)
+  const showingFrom = filtered.length === 0 ? 0 : startIndex + 1
+  const showingTo = filtered.length === 0 ? 0 : Math.min(startIndex + PAGE_SIZE, filtered.length)
+  const pageNumbers = useMemo(() => {
+    if (totalPages <= 5) return Array.from({ length: totalPages }, (_, i) => i + 1)
+    if (currentPage <= 3) return [1, 2, 3, 4, 5]
+    if (currentPage >= totalPages - 2) return [totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1, totalPages]
+    return [currentPage - 2, currentPage - 1, currentPage, currentPage + 1, currentPage + 2]
+  }, [currentPage, totalPages])
+
+  useEffect(() => {
+    setPage(1)
+  }, [q, raceFilter, paymentFilter, categoryFilter, sortBy])
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages)
+  }, [page, totalPages])
 
   return (
     <div className="space-y-4">
@@ -187,7 +209,7 @@ export function AdminRegistrations() {
         {loading ? <p className="px-4 py-3 text-sm text-slate-500">Loading…</p> : null}
         {error ? <p className="px-4 py-3 text-sm text-rose-600">{error}</p> : null}
         <div className="overflow-x-auto">
-          <table className="min-w-[1220px] w-full text-left text-sm">
+          <table className="min-w-[1320px] w-full text-left text-sm">
             <thead className="bg-slate-50 text-[10px] uppercase tracking-[0.08em] text-slate-500">
               <tr>
                 <th className="py-3 pl-4 pr-3 font-semibold">Rider Name</th>
@@ -197,15 +219,18 @@ export function AdminRegistrations() {
                 <th className="py-3 pr-3 font-semibold">Team</th>
                 <th className="py-3 pr-3 font-semibold">Registration Date</th>
                 <th className="py-3 pr-3 font-semibold">Payment Status</th>
+                <th className="py-3 pr-3 font-semibold">Reference No.</th>
                 <th className="py-3 pr-3 font-semibold">Bib Number</th>
                 <th className="py-3 pr-3 font-semibold">Registration Status</th>
                 <th className="py-3 pr-4 text-right font-semibold">Admin Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filtered.map((r) => {
+              {paginated.map((r) => {
                 const payment = String(r.payment_status ?? 'unknown')
                 const registrationStatus = String(r.status ?? 'pending')
+                const isPaid = payment.toLowerCase() === 'paid'
+                const referenceNo = (r.provider_reference ?? '').trim()
                 return (
                   <tr key={r.id} className="text-slate-800 transition-colors hover:bg-slate-50/70">
                     <td className="py-3 pl-4 pr-3">
@@ -226,6 +251,9 @@ export function AdminRegistrations() {
                         {payment}
                       </span>
                     </td>
+                    <td className="py-3 pr-3 text-xs">
+                      {isPaid ? <span className="font-semibold text-emerald-700">{referenceNo || '-'}</span> : <span className="text-slate-400">-</span>}
+                    </td>
                     <td className="py-3 pr-3 text-xs font-semibold text-slate-700">—</td>
                     <td className="py-3 pr-3">
                       <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase ${pill(registrationStatus)}`}>
@@ -244,9 +272,9 @@ export function AdminRegistrations() {
                   </tr>
                 )
               })}
-              {filtered.length === 0 && !loading ? (
+              {paginated.length === 0 && !loading ? (
                 <tr>
-                  <td className="py-6 text-center text-sm font-medium text-slate-500" colSpan={10}>
+                  <td className="py-6 text-center text-sm font-medium text-slate-500" colSpan={11}>
                     No registrations found.
                   </td>
                 </tr>
@@ -256,21 +284,37 @@ export function AdminRegistrations() {
         </div>
         <div className="flex items-center justify-between border-t border-slate-100 px-4 py-3 text-xs text-slate-500">
           <p>
-            Showing {filtered.length === 0 ? 0 : 1} to {filtered.length} of {filtered.length} registrations
+            Showing {showingFrom} to {showingTo} of {filtered.length} registrations
           </p>
           <div className="flex items-center gap-1">
-            <button type="button" className="rounded-md border border-slate-200 px-2 py-1 text-slate-400" disabled>
+            <button
+              type="button"
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              className="rounded-md border border-slate-200 px-2 py-1 text-slate-600 hover:bg-slate-50 disabled:text-slate-400"
+              disabled={currentPage === 1}
+            >
               ‹
             </button>
-            <button type="button" className="rounded-md bg-[#0f5ea8] px-2.5 py-1 font-semibold text-white">
-              1
-            </button>
-            {[2, 3, 4, 5].map((page) => (
-              <button key={page} type="button" className="rounded-md border border-slate-200 px-2.5 py-1 text-slate-600 hover:bg-slate-50">
-                {page}
+            {pageNumbers.map((pageNumber) => (
+              <button
+                key={pageNumber}
+                type="button"
+                onClick={() => setPage(pageNumber)}
+                className={
+                  pageNumber === currentPage
+                    ? 'rounded-md bg-[#0f5ea8] px-2.5 py-1 font-semibold text-white'
+                    : 'rounded-md border border-slate-200 px-2.5 py-1 text-slate-600 hover:bg-slate-50'
+                }
+              >
+                {pageNumber}
               </button>
             ))}
-            <button type="button" className="rounded-md border border-slate-200 px-2 py-1 text-slate-400" disabled>
+            <button
+              type="button"
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              className="rounded-md border border-slate-200 px-2 py-1 text-slate-600 hover:bg-slate-50 disabled:text-slate-400"
+              disabled={currentPage === totalPages}
+            >
               ›
             </button>
           </div>

@@ -8,7 +8,7 @@ export interface UserProfile {
   city?: string
 }
 
-export type RaceType = 'criterium' | 'itt' | 'ttt' | 'road_race' | 'fun_ride'
+export type RaceType = string
 
 export interface Event {
   id: string

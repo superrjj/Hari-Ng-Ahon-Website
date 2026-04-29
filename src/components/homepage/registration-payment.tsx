@@ -318,6 +318,9 @@ export function RegistrationPayment() {
   const [cancellingDraft, setCancellingDraft] = useState(false)
 
   const activeRegistrationId = registrationId ?? pendingDraft?.registrationId ?? null
+  const checkoutAmount = Number(checkoutItem?.amount ?? pendingDraft?.amount ?? 1)
+  const checkoutEventTitle = checkoutItem?.eventTitle ?? pendingDraft?.eventTitle ?? 'Event Registration'
+  const checkoutRaceType = checkoutItem?.raceType ?? pendingDraft?.raceType ?? '-'
 
   const merchantReference = useMemo(
     () => `HNA-${activeRegistrationId ?? 'NA'}-${Date.now()}`,
@@ -467,9 +470,6 @@ export function RegistrationPayment() {
                 <p>
                   Race: <span className="font-semibold">{pendingDraft.raceType}</span>
                 </p>
-                <p>
-                  Registration: <span className="font-mono text-xs">{pendingDraft.registrationId}</span>
-                </p>
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
                 <button
@@ -512,26 +512,37 @@ export function RegistrationPayment() {
             <p className="text-sm text-slate-600">Complete payment to confirm your registration.</p>
           </div>
 
-          {/* Fee summary */}
-          <div className="rounded-lg border border-slate-200 bg-white p-5 text-sm text-slate-800">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <p className="text-slate-600">Registration fee</p>
-                <p className="text-xs text-slate-500">
-                  {checkoutItem?.eventTitle ?? pendingDraft?.eventTitle ?? 'Event Registration'}
-                  {' • '}
-                  {checkoutItem?.raceType ?? pendingDraft?.raceType ?? '-'}
-                </p>
-              </div>
-              <p className="font-medium">
-                ₱{Number(checkoutItem?.amount ?? pendingDraft?.amount ?? 1).toFixed(2)}
-              </p>
+          {/* Item checkout */}
+          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-lg font-semibold text-slate-900">Item Checkout</h2>
+              <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
+                1 item
+              </span>
             </div>
-            <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3">
-              <p className="text-slate-600">Total</p>
-              <p className="text-lg font-semibold text-slate-900">
-                ₱{Number(checkoutItem?.amount ?? pendingDraft?.amount ?? 1).toFixed(2)}
-              </p>
+            <div className="mt-4 rounded-lg border border-slate-100 bg-slate-50 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">Registration Fee</p>
+                  <p className="text-sm text-slate-600">{checkoutEventTitle}</p>
+                  <p className="mt-1 text-xs uppercase tracking-wide text-slate-500">{checkoutRaceType}</p>
+                </div>
+                <p className="text-base font-semibold text-slate-900">₱{checkoutAmount.toFixed(2)}</p>
+              </div>
+            </div>
+            <div className="mt-4 space-y-2 border-t border-slate-100 pt-4 text-sm">
+              <div className="flex items-center justify-between text-slate-600">
+                <p>Subtotal</p>
+                <p>₱{checkoutAmount.toFixed(2)}</p>
+              </div>
+              <div className="flex items-center justify-between text-slate-600">
+                <p>Processing Fee</p>
+                <p>₱0.00</p>
+              </div>
+              <div className="flex items-center justify-between pt-1 text-base font-semibold text-slate-900">
+                <p>Total</p>
+                <p>₱{checkoutAmount.toFixed(2)}</p>
+              </div>
             </div>
           </div>
 
@@ -543,9 +554,7 @@ export function RegistrationPayment() {
               registration stays pending until webhook confirmation marks the
               payment as paid.
             </p>
-            {activeRegistrationId ? (
-              <p className="text-xs text-slate-500">Registration reference: <span className="font-mono">{activeRegistrationId}</span></p>
-            ) : null}
+            {activeRegistrationId ? <p className="text-xs text-slate-500">Your payment session is linked to your registration.</p> : null}
           </div>
 
           {/* Agree row — matches original design exactly */}

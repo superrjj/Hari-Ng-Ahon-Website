@@ -1,6 +1,6 @@
 import { supabase } from '../lib/supabase'
 
-export type RegistrationEventKey = 'criterium' | 'itt' | 'road_race'
+export type RegistrationEventKey = string
 export type PendingPaymentDraft = {
   paymentOrderId: string
   registrationId: string
@@ -113,7 +113,10 @@ export const registrationService = {
     // First find candidate registrations owned by current user/email.
     let registrationQuery = supabase
       .from('registration_forms')
-      .select('id, event_id, registration_fee, user_id, registrant_email')
+    .select('id, event_id, registration_fee, user_id, registrant_email, status')
+    // Only show "resume-able" payment drafts. If user cancelled, we set registration status back to 'draft',
+    // so we should not surface it again on the home page.
+    .in('status', ['payment_processing', 'pending_payment'])
 
     if (registrationId) {
       registrationQuery = registrationQuery.eq('id', registrationId)

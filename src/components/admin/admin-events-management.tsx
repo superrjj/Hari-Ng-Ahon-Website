@@ -12,11 +12,23 @@ import { ModuleShell, formatDate, formatMoney, useModuleLoader } from './admin-m
 // ─── Types ───────────────────────────────────────────────────────────────────
 type Step = 1 | 2 | 3 | 4
 
-interface Category {
+interface DisciplineCategory {
   id: string
   name: string
+  code: string
   riderLimit: string
-  fee: string
+  active: boolean
+}
+
+interface Discipline {
+  id: string
+  name: string
+  categories: DisciplineCategory[]
+}
+
+interface EventType {
+  slug: string
+  name: string
   active: boolean
 }
 
@@ -74,7 +86,7 @@ function toDateTimeLocalValue(value: unknown) {
 }
 
 // ─── Step indicator ──────────────────────────────────────────────────────────
-const STEPS = ['Event Information', 'Categories & Pricing', 'Additional Information', 'Review & Publish']
+const STEPS = ['Event Information', 'Disciplines & Categories', 'Additional Information', 'Review & Publish']
 
 function StepTab({ step, current }: { step: number; current: Step }) {
   const done = step < current
@@ -235,6 +247,9 @@ function Step1({
   setRouteMapFile,
   currentPosterUrl,
   currentRouteMapUrl,
+  eventTypes,
+  eventTypesLoading,
+  onAddEventType,
 }: {
   form: any
   setForm: any
@@ -244,6 +259,9 @@ function Step1({
   setRouteMapFile: (file: File | null) => void
   currentPosterUrl?: string | null
   currentRouteMapUrl?: string | null
+  eventTypes: EventType[]
+  eventTypesLoading: boolean
+  onAddEventType: () => void
 }) {
   return (
     <div className="space-y-6">
@@ -266,13 +284,69 @@ function Step1({
               <p className="mt-0.5 text-right text-[10px] text-slate-400">{form.description.length} / 1000</p>
             </label>
             <label className="block">
-              <p className="mb-1 text-xs font-medium text-slate-600">Race Type <span className="text-red-500">*</span></p>
-              <select className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-white" value={form.race_type} onChange={(e) => setForm((v: any) => ({ ...v, race_type: e.target.value }))}>
-                <option value="">Select race type</option>
-                <option value="criterium">Criterium</option>
-                <option value="itt">ITT</option>
-                <option value="road_race">Road Race</option>
-              </select>
+              <p className="mb-1 text-xs font-medium text-slate-600">Event Type <span className="text-red-500">*</span></p>
+              <div className="space-y-2">
+                {eventTypesLoading ? <p className="text-xs text-slate-500">Loading event types…</p> : null}
+                <div className="flex flex-wrap items-center gap-3">
+                  {eventTypes.map((t) => {
+                    const uiSelected: string[] = Array.isArray(form.race_types) ? (form.race_types as string[]) : []
+                    const checked = uiSelected.includes(t.slug)
+                      ? true
+                      : (!uiSelected.length && String(form.race_type ?? '') === t.slug)
+                    return (
+                      <label
+                        key={t.slug}
+                        className={`inline-flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors ${
+                          checked ? 'border-blue-300 bg-blue-50' : 'border-slate-200 bg-white'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          name="event_type"
+                          checked={checked}
+                          onChange={(e) => {
+                            setForm((v: any) => {
+                              const prev: string[] = Array.isArray(v.race_types) ? v.race_types : []
+                              const set = new Set(prev)
+                              if (e.target.checked) set.add(t.slug)
+                              else set.delete(t.slug)
+                              const next = Array.from(set)
+
+                              // Save ONE value for backend compatibility.
+                              // If user unchecked the currently saved one, keep the first remaining.
+                              const nextRaceType = next.length ? next[next.length - 1] : ''
+                              return { ...v, race_types: next, race_type: nextRaceType }
+                            })
+                          }}
+                          disabled={eventTypesLoading}
+                          className="sr-only"
+                        />
+                        <span
+                          aria-hidden="true"
+                          className={`flex h-4 w-4 items-center justify-center rounded border ${
+                            checked ? 'border-blue-600 bg-blue-600 text-white' : 'border-slate-300 bg-white text-transparent'
+                          }`}
+                        >
+                          ✓
+                        </span>
+                        <span className="whitespace-nowrap">{t.name}</span>
+                      </label>
+                    )
+                  })}
+                </div>
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => onAddEventType()}
+                    disabled={eventTypesLoading}
+                    className="inline-flex items-center justify-center rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-blue-700 hover:bg-blue-100 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                    title="Add new event type"
+                  >
+                    <Plus className="h-4 w-4" />
+                    <span className="ml-2 text-xs font-semibold">Add</span>
+                  </button>
+                </div>
+              </div>
             </label>
             <label className="block">
               <p className="mb-1 text-xs font-medium text-slate-600">Registration Fee (PHP)</p>
@@ -353,84 +427,230 @@ function Step1({
 }
 
 // ─── Step 2 ──────────────────────────────────────────────────────────────────
-const BIKE_ICONS: Record<string, string> = { 'Road Bike': '🚴', MTB: '🚵', Gravel: '🚵', 'E-Bike (Open)': '⚡' }
+const BIKE_DISCIPLINE_ICONS: Record<string, string> = {
+  'Road Bike': '🚴',
+  'Mountain Bike': '🚵',
+  MTB: '🚵',
+  Gravel: '🚵',
+  'Gravel Bike': '🚵',
+  'E-Bike (Open)': '⚡',
+  Mixed: '🎽',
+}
 
-function Step2({ categories, setCategories }: { categories: Category[]; setCategories: React.Dispatch<React.SetStateAction<Category[]>> }) {
-  const addCategory = () => {
-    setCategories((prev) => [...prev, { id: crypto.randomUUID(), name: '', riderLimit: '', fee: '', active: true }])
+function Step2({
+  disciplines,
+  setDisciplines,
+  disciplinesLoading,
+}: {
+  disciplines: Discipline[]
+  setDisciplines: React.Dispatch<React.SetStateAction<Discipline[]>>
+  disciplinesLoading?: boolean
+}) {
+  const addDiscipline = () => {
+    setDisciplines((prev) => [...prev, { id: crypto.randomUUID(), name: '', categories: [] }])
   }
-  const removeCategory = (id: string) => setCategories((prev) => prev.filter((c) => c.id !== id))
-  const updateCategory = (id: string, key: keyof Category, value: any) => {
-    setCategories((prev) => prev.map((c) => (c.id === id ? { ...c, [key]: value } : c)))
+
+  const removeDiscipline = (id: string) => setDisciplines((prev) => prev.filter((d) => d.id !== id))
+
+  const updateDiscipline = (id: string, value: Partial<Discipline>) => {
+    setDisciplines((prev) => prev.map((d) => (d.id === id ? { ...d, ...value } : d)))
   }
-  const totalFee = categories.reduce((sum, c) => sum + Number(c.fee || 0), 0)
+
+  const addCategoryToDiscipline = (disciplineId: string) => {
+    setDisciplines((prev) =>
+      prev.map((d) =>
+        d.id !== disciplineId
+          ? d
+          : {
+            ...d,
+            categories: [
+              ...d.categories,
+              { id: crypto.randomUUID(), name: '', code: '', riderLimit: '', active: true },
+            ],
+          },
+      ),
+    )
+  }
+
+  const removeCategoryFromDiscipline = (disciplineId: string, categoryId: string) => {
+    setDisciplines((prev) =>
+      prev.map((d) => (d.id !== disciplineId ? d : { ...d, categories: d.categories.filter((c) => c.id !== categoryId) })),
+    )
+  }
+
+  const updateCategoryInDiscipline = (
+    disciplineId: string,
+    categoryId: string,
+    value: Partial<DisciplineCategory>,
+  ) => {
+    setDisciplines((prev) =>
+      prev.map((d) =>
+        d.id !== disciplineId
+          ? d
+          : {
+            ...d,
+            categories: d.categories.map((c) => (c.id === categoryId ? { ...c, ...value } : c)),
+          },
+      ),
+    )
+  }
+
+  const totalCategories = disciplines.reduce((sum, d) => sum + d.categories.length, 0)
+  const totalRiderLimit = disciplines.reduce(
+    (sum, d) => sum + d.categories.reduce((s, c) => s + Number(c.riderLimit || 0), 0),
+    0,
+  )
 
   return (
     <div className="space-y-5">
       <div className="flex items-start justify-between">
         <div>
-          <p className="text-sm font-semibold text-slate-800">Event Categories</p>
-          <p className="text-xs text-slate-500 mt-0.5">Add race categories for this event. Each category can have its own price and rider limit.</p>
+          <p className="text-sm font-semibold text-slate-800">Event Disciplines & Categories</p>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Add disciplines first, then add categories under each discipline. Registration fee is set in Step 1.
+          </p>
         </div>
-        <button type="button" onClick={addCategory} className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 transition-colors">
-          <Plus className="h-3.5 w-3.5" /> Add Category
+        <button
+          type="button"
+          onClick={addDiscipline}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 transition-colors"
+        >
+          <Plus className="h-3.5 w-3.5" /> Add Discipline
         </button>
       </div>
 
+      {disciplinesLoading ? (
+        <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-xs text-slate-500">
+          Loading disciplines & categories…
+        </div>
+      ) : null}
+
       <div className="space-y-3">
-        {categories.map((cat) => (
-          <div key={cat.id} className="rounded-xl border border-slate-200 bg-white p-4">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <span className="text-lg">{BIKE_ICONS[cat.name] ?? '🚴'}</span>
-                <p className="text-sm font-semibold text-slate-800">{cat.name || 'New Category'}</p>
+        {disciplines.map((disc) => (
+          <div key={disc.id} className="rounded-xl border border-slate-200 bg-white p-4">
+            <div className="flex items-start justify-between gap-4 mb-3">
+              <div className="flex-1 space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">{BIKE_DISCIPLINE_ICONS[disc.name] ?? '🚴'}</span>
+                  <p className="text-sm font-semibold text-slate-800">{disc.name || 'New Discipline'}</p>
+                </div>
+                <label>
+                  <p className="mb-1 text-[10px] font-medium text-slate-500">
+                    Discipline Name <span className="text-red-500">*</span>
+                  </p>
+                  <input
+                    className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                    placeholder="e.g. Mountain Bike"
+                    value={disc.name}
+                    onChange={(e) => updateDiscipline(disc.id, { name: e.target.value })}
+                  />
+                </label>
               </div>
-              <button type="button" onClick={() => removeCategory(cat.id)} className="rounded-lg border border-red-100 p-1.5 text-red-400 hover:bg-red-50 transition-colors">
+              <button
+                type="button"
+                onClick={() => removeDiscipline(disc.id)}
+                className="rounded-lg border border-red-100 p-1.5 text-red-400 hover:bg-red-50 transition-colors"
+              >
                 <Trash2 className="h-3.5 w-3.5" />
               </button>
             </div>
-            <div className="grid grid-cols-3 gap-3">
-              <label>
-                <p className="mb-1 text-[10px] font-medium text-slate-500">Category Name <span className="text-red-500">*</span></p>
-                <input className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="e.g. Road Bike" value={cat.name} onChange={(e) => updateCategory(cat.id, 'name', e.target.value)} />
-              </label>
-              <label>
-                <p className="mb-1 text-[10px] font-medium text-slate-500">Rider Limit</p>
-                <input className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" type="number" placeholder="150" value={cat.riderLimit} onChange={(e) => updateCategory(cat.id, 'riderLimit', e.target.value)} />
-              </label>
-              <label>
-                <p className="mb-1 text-[10px] font-medium text-slate-500">Registration Fee (PHP) <span className="text-red-500">*</span></p>
-                <input className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" type="number" placeholder="1,200" value={cat.fee} onChange={(e) => updateCategory(cat.id, 'fee', e.target.value)} />
-              </label>
-            </div>
-            <div className="mt-3 flex items-center gap-2">
+
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-sm font-semibold text-slate-700">Categories</p>
               <button
                 type="button"
-                onClick={() => updateCategory(cat.id, 'active', !cat.active)}
-                className={`relative h-5 w-9 rounded-full transition-colors ${cat.active ? 'bg-blue-600' : 'bg-slate-300'}`}
+                onClick={() => addCategoryToDiscipline(disc.id)}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 transition-colors"
               >
-                <span className={`absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${cat.active ? 'translate-x-4' : ''}`} />
+                <Plus className="h-3.5 w-3.5" /> Add Category
               </button>
-              <span className="text-xs text-slate-600">{cat.active ? 'Active' : 'Inactive'}</span>
             </div>
+
+            {disc.categories.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-xs text-slate-500">
+                No categories yet. Add at least one category under this discipline.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {disc.categories.map((cat) => (
+                  <div key={cat.id} className="rounded-lg border border-slate-200 bg-white p-3">
+                    <div className="grid grid-cols-3 gap-3">
+                      <label>
+                        <p className="mb-1 text-[10px] font-medium text-slate-500">
+                          Category Name <span className="text-red-500">*</span>
+                        </p>
+                        <input
+                          className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                          placeholder="e.g. Youth / Open / Heavyweight"
+                          value={cat.name}
+                          onChange={(e) => updateCategoryInDiscipline(disc.id, cat.id, { name: e.target.value })}
+                        />
+                      </label>
+                      <label>
+                        <p className="mb-1 text-[10px] font-medium text-slate-500">Category Code</p>
+                        <input
+                          className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                          placeholder="e.g. YOUTH_OPEN"
+                          value={cat.code}
+                          onChange={(e) => updateCategoryInDiscipline(disc.id, cat.id, { code: e.target.value })}
+                        />
+                      </label>
+                      <label>
+                        <p className="mb-1 text-[10px] font-medium text-slate-500">Rider Limit</p>
+                        <input
+                          className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                          type="number"
+                          placeholder="150"
+                          value={cat.riderLimit}
+                          onChange={(e) => updateCategoryInDiscipline(disc.id, cat.id, { riderLimit: e.target.value })}
+                        />
+                      </label>
+                    </div>
+
+                    <div className="mt-3 flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => updateCategoryInDiscipline(disc.id, cat.id, { active: !cat.active })}
+                          className={`relative h-5 w-9 rounded-full transition-colors ${cat.active ? 'bg-blue-600' : 'bg-slate-300'}`}
+                        >
+                          <span
+                            className={`absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${cat.active ? 'translate-x-4' : ''}`}
+                          />
+                        </button>
+                        <span className="text-xs text-slate-600">{cat.active ? 'Active' : 'Inactive'}</span>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => removeCategoryFromDiscipline(disc.id, cat.id)}
+                        className="rounded-lg border border-red-100 p-1.5 text-red-400 hover:bg-red-50 transition-colors"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         ))}
       </div>
 
-      {categories.length > 0 && (
+      {disciplines.length > 0 && (
         <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-700">
-          ℹ️ Rider limit is the maximum number of participants allowed for this category.
+          ℹ️ Rider limit is the maximum number of participants allowed for each category.
         </div>
       )}
 
       <div className="rounded-xl border border-slate-200 bg-white p-4">
         <div className="flex items-center justify-between">
-          <p className="text-sm font-semibold text-slate-700">Pricing Summary</p>
-          <p className="text-xs text-slate-500">Total Categories: {categories.length}</p>
+          <p className="text-sm font-semibold text-slate-700">Summary</p>
+          <p className="text-xs text-slate-500">Total Categories: {totalCategories}</p>
         </div>
         <div className="mt-2 flex items-center justify-between">
-          <p className="text-xs text-slate-600">Total Registration Fee (All Categories)</p>
-          <p className="text-sm font-bold text-blue-600">PHP {totalFee.toLocaleString()}</p>
+          <p className="text-xs text-slate-600">Total Riders (All Categories)</p>
+          <p className="text-sm font-bold text-blue-600">{totalRiderLimit.toLocaleString()}</p>
         </div>
       </div>
     </div>
@@ -528,18 +748,21 @@ function Step3({
 // ─── Step 4 ──────────────────────────────────────────────────────────────────
 function Step4({
   form,
-  categories,
+  disciplines,
   extra,
   posterFile,
   currentPosterUrl,
 }: {
   form: any
-  categories: Category[]
+  disciplines: Discipline[]
   extra: any
   posterFile?: File | null
   currentPosterUrl?: string | null
 }) {
-  const totalFee = categories.reduce((sum, c) => sum + Number(c.fee || 0), 0)
+  const riderLimitTotal = disciplines.reduce(
+    (sum, d) => sum + d.categories.reduce((s, c) => s + Number(c.riderLimit || 0), 0),
+    0,
+  )
 
   const [posterPreviewUrl, setPosterPreviewUrl] = useState<string | null>(null)
 
@@ -588,27 +811,42 @@ function Step4({
               <div><p className="text-slate-500">Date & Time</p><p className="font-medium text-slate-800">{form.event_date ? `${form.event_date} (${form.start_time || '—'})` : '—'}</p></div>
             <div><p className="text-slate-500">Venue</p><p className="font-medium text-slate-800">{form.venue ? `${form.venue}, ${form.city}` : '—'}</p></div>
               <div><p className="text-slate-500">Registration Deadline</p><p className="font-medium text-slate-800">{form.registration_deadline || '—'}</p></div>
-            <div><p className="text-slate-500">Rider Limit</p><p className="font-medium text-slate-800">{categories.reduce((s, c) => s + Number(c.riderLimit || 0), 0)} Riders (All Categories)</p></div>
+            <div><p className="text-slate-500">Registration Fee</p><p className="font-medium text-slate-800">PHP {Number(form.registration_fee || 0).toLocaleString()}</p></div>
+            <div><p className="text-slate-500">Rider Limit</p><p className="font-medium text-slate-800">{riderLimitTotal.toLocaleString()} Riders (All Categories)</p></div>
           </div>
         </div>
       </div>
 
       <div className="rounded-xl border border-slate-200 bg-white p-4">
-        <p className="text-sm font-semibold text-slate-800 mb-3">Categories & Pricing</p>
-        <div className="mb-2 grid grid-cols-2 gap-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-          <span>Category</span><span>Registration Fee</span>
-        </div>
-        <div className="space-y-2">
-          {categories.map((c) => (
-            <div key={c.id} className="grid grid-cols-2 gap-1 text-xs text-slate-700">
-              <span>{c.name || '—'}</span><span>PHP {Number(c.fee || 0).toLocaleString()}</span>
-            </div>
-          ))}
-        </div>
-        <div className="mt-3 border-t border-slate-100 pt-3 flex justify-between text-xs">
-          <span className="text-slate-500">Total Categories: {categories.length}</span>
-          <span className="font-bold text-slate-800">Total Fee (All Categories): PHP {totalFee.toLocaleString()}</span>
-        </div>
+        <p className="text-sm font-semibold text-slate-800 mb-3">Disciplines & Categories</p>
+        {disciplines.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-xs text-slate-500">
+            No disciplines/categorizes were added yet.
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {disciplines.map((d) => (
+              <div key={d.id} className="rounded-lg border border-slate-200 bg-white p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-xs font-semibold text-slate-800">{d.name || '—'}</p>
+                  <p className="text-[10px] text-slate-500">{d.categories.length} categories</p>
+                </div>
+                <div className="mt-2 space-y-2">
+                  {d.categories.length === 0 ? (
+                    <p className="text-xs text-slate-500">No categories.</p>
+                  ) : (
+                    d.categories.map((c) => (
+                      <div key={c.id} className="flex items-center justify-between gap-3 text-xs text-slate-700">
+                        <span>{c.name || '—'}</span>
+                        <span className="text-slate-500">Limit: {Number(c.riderLimit || 0).toLocaleString()}</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {extra.prizePool === 'has' && (
@@ -658,7 +896,10 @@ function CreateEventModal({
   const [form, setForm] = useState({
     title: String(initialEvent?.title ?? ''),
     description: String(initialEvent?.description ?? ''),
-    race_type: String(initialEvent?.race_type ?? ''),
+    race_type: String(initialEvent?.race_type ?? 'itt'),
+    // UI-only: allow checking multiple event types at once.
+    // Backend still saves ONE value into `events.race_type`.
+    race_types: initialEvent?.race_type ? [String(initialEvent.race_type)] : ([] as string[]),
     venue: String(initialEvent?.venue ?? ''),
     city: '',
     event_date: toDateInputValue(initialEvent?.event_date),
@@ -670,7 +911,64 @@ function CreateEventModal({
     ),
     registration_fee: String(initialEvent?.registration_fee ?? '0'),
   })
-  const [categories, setCategories] = useState<Category[]>([])
+  const [eventTypes, setEventTypes] = useState<EventType[]>([])
+  const [eventTypesLoading, setEventTypesLoading] = useState(true)
+
+  const loadEventTypes = async () => {
+    setEventTypesLoading(true)
+    try {
+      const { data, error } = await supabase
+        .from('event_types')
+        .select('slug, name, active')
+        .eq('active', true)
+        .order('name', { ascending: true })
+
+      if (error) throw error
+
+      setEventTypes((data ?? []) as EventType[])
+    } catch (e) {
+      toast.error((e as Error).message || 'Failed to load event types.')
+      setEventTypes([])
+    } finally {
+      setEventTypesLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    void loadEventTypes()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const handleAddEventType = async () => {
+    const nameRaw = window.prompt('Enter new event type (e.g., Criterium / ITT / Road Race):')
+    const name = String(nameRaw ?? '').trim()
+    if (!name) return
+
+    const slug = slugify(name)
+    if (!slug) {
+      toast.error('Event type name is required.')
+      return
+    }
+
+    setEventTypesLoading(true)
+    try {
+      const { error } = await supabase.from('event_types').upsert(
+        { name, slug, active: true },
+        { onConflict: 'slug' },
+      )
+      if (error) throw error
+
+      await loadEventTypes()
+      setForm((v: any) => ({ ...v, race_type: slug }))
+      toast.success('Event type added.')
+    } catch (e) {
+      toast.error((e as Error).message || 'Failed to add event type.')
+    } finally {
+      setEventTypesLoading(false)
+    }
+  }
+  const [disciplines, setDisciplines] = useState<Discipline[]>([])
+  const [disciplinesLoading, setDisciplinesLoading] = useState(false)
   const [posterFile, setPosterFile] = useState<File | null>(null)
   const [routeMapFile, setRouteMapFile] = useState<File | null>(null)
   const [organizerLogoFile, setOrganizerLogoFile] = useState<File | null>(null)
@@ -686,6 +984,59 @@ function CreateEventModal({
   })
 
   const isLastStep = step === 4
+
+  const loadDisciplinesForEvent = async (eventId: string) => {
+    setDisciplinesLoading(true)
+    try {
+      const { data, error } = await supabase
+        .from('race_categories')
+        .select('id, discipline, category_name, code, rider_limit, active')
+        .eq('event_id', eventId)
+
+      if (error) throw error
+
+      const rows = (data ?? []) as Array<Record<string, unknown>>
+
+      const grouped = new Map<string, Discipline>()
+      for (const row of rows) {
+        const disciplineName = String(row.discipline ?? '').trim() || 'General'
+        const categoryName = String(row.category_name ?? '').trim()
+        if (!categoryName) continue
+
+        const riderLimitValue = row.rider_limit ?? 0
+        const active = row.active === undefined ? true : Boolean(row.active)
+        const categoryId = String(row.id ?? crypto.randomUUID())
+
+        if (!grouped.has(disciplineName)) {
+          grouped.set(disciplineName, { id: crypto.randomUUID(), name: disciplineName, categories: [] })
+        }
+
+        const disc = grouped.get(disciplineName)!
+        disc.categories.push({
+          id: categoryId,
+          name: categoryName,
+          code: String(row.code ?? ''),
+          riderLimit: String(riderLimitValue ?? ''),
+          active,
+        })
+      }
+
+      setDisciplines(Array.from(grouped.values()))
+    } catch (e) {
+      toast.error((e as Error).message || 'Failed to load disciplines/categories.')
+      setDisciplines([])
+    } finally {
+      setDisciplinesLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (mode !== 'edit') return
+    const eventId = initialEvent?.id ? String(initialEvent.id) : ''
+    if (!eventId) return
+    void loadDisciplinesForEvent(eventId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, initialEvent?.id])
 
   const handleNext = async () => {
     if (isLastStep) {
@@ -711,7 +1062,12 @@ function CreateEventModal({
         const routeMapUrl = await uploadToBucket('event-route-maps', routeMapFile)
         const organizerLogoUrl = await uploadToBucket('organizer-logos', organizerLogoFile)
         const baseSlug = slugify(form.title) || 'event'
-        const riderLimit = categories.reduce((sum, category) => sum + Number(category.riderLimit || 0), 0)
+        const eventIdForSave = mode === 'edit' ? String(initialEvent?.id) : crypto.randomUUID()
+        const slugValue = `${baseSlug}-${Date.now()}`
+        const riderLimit = disciplines.reduce(
+          (sum, d) => sum + d.categories.reduce((s, c) => s + Number(c.riderLimit || 0), 0),
+          0,
+        )
 
         const payload = {
           title: form.title.trim(),
@@ -727,7 +1083,7 @@ function CreateEventModal({
               ? `Total: ${extra.totalPrize || '0'} | ${extra.prizeDesc || ''}`.trim()
               : null,
           poster_url: posterUrl,
-          slug: `${baseSlug}-${Date.now()}`,
+          slug: slugValue,
           short_description: form.description.trim().slice(0, 160),
           banner_url: organizerLogoUrl,
           registration_closes_at: deadlineTimestamp,
@@ -743,13 +1099,34 @@ function CreateEventModal({
 
         const response =
           mode === 'edit'
-            ? await supabase.from('events').update(payload).eq('id', initialEvent?.id)
+            ? await supabase.from('events').update(payload).eq('id', eventIdForSave)
             : await supabase.from('events').insert({
                 ...payload,
-                slug: `${baseSlug}-${Date.now()}`,
+                id: eventIdForSave,
               })
 
         if (response.error) throw response.error
+
+        // Persist Step 2 categories into race_categories (includes category code).
+        const categoryRows = disciplines.flatMap((d) =>
+          d.categories.map((c) => ({
+            event_id: eventIdForSave,
+            discipline: d.name,
+            category_name: c.name,
+            code: c.code.trim() ? c.code.trim() : null,
+            rider_limit: c.riderLimit.trim() ? Number(c.riderLimit) : null,
+            active: c.active,
+          })),
+        )
+
+        const { error: deleteErr } = await supabase.from('race_categories').delete().eq('event_id', eventIdForSave)
+        if (deleteErr) throw deleteErr
+
+        if (categoryRows.length > 0) {
+          const { error: insertErr } = await supabase.from('race_categories').insert(categoryRows)
+          if (insertErr) throw insertErr
+        }
+
         toast.success(mode === 'edit' ? 'Event updated successfully.' : 'Event created successfully.')
         await onSave()
       } catch (error) {
@@ -790,9 +1167,18 @@ function CreateEventModal({
               setRouteMapFile={setRouteMapFile}
               currentPosterUrl={initialEvent?.poster_url ?? null}
               currentRouteMapUrl={initialEvent?.route_map_url ?? null}
+              eventTypes={eventTypes}
+              eventTypesLoading={eventTypesLoading}
+              onAddEventType={handleAddEventType}
             />
           )}
-          {step === 2 && <Step2 categories={categories} setCategories={setCategories} />}
+          {step === 2 && (
+            <Step2
+              disciplines={disciplines}
+              setDisciplines={setDisciplines}
+              disciplinesLoading={disciplinesLoading}
+            />
+          )}
           {step === 3 && (
             <Step3
               extra={extra}
@@ -805,7 +1191,7 @@ function CreateEventModal({
           {step === 4 && (
             <Step4
               form={form}
-              categories={categories}
+              disciplines={disciplines}
               extra={extra}
               posterFile={posterFile}
               currentPosterUrl={initialEvent?.poster_url ?? null}
@@ -1118,7 +1504,7 @@ export function AdminEventsManagement() {
             <option value="unpublished">Unpublished</option>
           </select>
           <select className="h-10 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-white" value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
-            <option value="all">All Categories</option>
+            <option value="all">All Event Types</option>
             <option value="criterium">Criterium</option>
             <option value="itt">ITT</option>
             <option value="road_race">Road Race</option>

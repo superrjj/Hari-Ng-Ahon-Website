@@ -16,6 +16,7 @@ export interface AdminRegistrationRow {
   payment_order_status?: string | null
   payment_order_id?: string | null
   merchant_reference?: string | null
+  provider_reference?: string | null
   paid_at?: string | null
   user_id?: string | null
 }
@@ -49,10 +50,12 @@ function normalizePaymentStatus(args: { orderStatus?: string | null; txStatus?: 
 
 export const adminApi = {
   async registrationsList() {
-    // 1) Base registrations: registration_forms + event race_type/title
+    // 1) Base registrations: registration_forms + event_step1 race_type/title
+    // Avoid `event:events(...)` embedding because it depends on schema-cache relationships
+    // which can break when events is split into step tables.
     const { data: forms, error: formsError } = await supabase
       .from('registration_forms')
-      .select('id, created_at, status, registrant_email, user_id, event:events(race_type, title)')
+      .select('id, created_at, status, registrant_email, user_id, event_id')
       .order('created_at', { ascending: false })
       .limit(200)
 
@@ -63,13 +66,27 @@ export const adminApi = {
       status?: string | null
       registrant_email?: string | null
       user_id?: string | null
-      event?: { race_type?: string | null; title?: string | null } | null
+      event_id?: string | null
     }>
 
     const registrationIds = base.map((f) => f.id)
     if (registrationIds.length === 0) {
       return [] as AdminRegistrationRow[]
     }
+
+    const eventIds = Array.from(
+      new Set(base.map((f) => String(f.event_id ?? '')).filter(Boolean)),
+    )
+
+    const { data: events, error: eventsError } = eventIds.length
+      ? await supabase.from('event_step1').select('id, race_type, title').in('id', eventIds)
+      : { data: [], error: null }
+
+    if (eventsError) throw eventsError
+
+    const eventById = new Map<string, { race_type?: string | null; title?: string | null }>(
+      (events ?? []).map((e) => [String(e.id), { race_type: e.race_type ?? null, title: e.title ?? null }]),
+    )
 
     // 1.5) Rider full names for table display
     const { data: riderDetails, error: riderDetailsError } = await supabase
@@ -91,7 +108,7 @@ export const adminApi = {
     // 2) Latest payment order per registration (paymongo)
     const { data: orders, error: ordersError } = await supabase
       .from('payment_orders')
-      .select('id, registration_id, status, merchant_reference, updated_at, created_at')
+      .select('id, registration_id, status, merchant_reference, provider_reference, updated_at, created_at')
       .in('registration_id', registrationIds)
       .order('created_at', { ascending: false })
 
@@ -125,13 +142,14 @@ export const adminApi = {
       const payment_status = normalizePaymentStatus({ orderStatus: order?.status, txStatus: tx?.status })
       const rider = riderByReg.get(f.id)
       const riderFullName = [rider?.first_name, rider?.last_name].filter(Boolean).join(' ').trim()
+      const ev = f.event_id ? eventById.get(String(f.event_id)) : undefined
       return {
         id: f.id,
         created_at: f.created_at,
-        race_type: f.event?.race_type ?? null,
+        race_type: ev?.race_type ?? null,
         discipline: rider?.discipline ?? null,
         age_category: rider?.age_category ?? null,
-        event_title: f.event?.title ?? null,
+        event_title: ev?.title ?? null,
         rider_full_name: riderFullName || null,
         registrant_email: f.registrant_email ?? null,
         status: f.status ?? null,
@@ -139,6 +157,7 @@ export const adminApi = {
         payment_order_status: order?.status ?? null,
         payment_order_id: order?.id ?? null,
         merchant_reference: order?.merchant_reference ?? null,
+        provider_reference: order?.provider_reference ?? null,
         paid_at: tx?.paid_at ?? null,
         user_id: f.user_id ?? null,
       } satisfies AdminRegistrationRow
@@ -148,7 +167,7 @@ export const adminApi = {
   async registrationDetails(registrationId: string) {
     const { data: reg, error: regError } = await supabase
       .from('registration_forms')
-      .select('id, created_at, status, registrant_email, user_id, event:events(race_type, title)')
+      .select('id, created_at, status, registrant_email, user_id, event_id')
       .eq('id', registrationId)
       .maybeSingle()
 
@@ -166,7 +185,7 @@ export const adminApi = {
 
     const { data: order, error: orderError } = await supabase
       .from('payment_orders')
-      .select('id, status, merchant_reference, amount, currency, created_at, updated_at')
+      .select('id, status, merchant_reference, provider_reference, amount, currency, created_at, updated_at')
       .eq('registration_id', registrationId)
       .order('created_at', { ascending: false })
       .limit(1)
@@ -187,21 +206,28 @@ export const adminApi = {
     if (txError) throw txError
 
     const payment_status = normalizePaymentStatus({ orderStatus: order?.status ?? null, txStatus: tx?.status ?? null })
-    const event = Array.isArray((reg as any)?.event) ? (reg as any).event?.[0] : (reg as any)?.event
+
+    const evId = reg?.event_id ? String(reg.event_id) : null
+    const { data: ev, error: evError } = evId
+      ? await supabase.from('event_step1').select('id, race_type, title').eq('id', evId).maybeSingle()
+      : { data: null, error: null }
+
+    if (evError) throw evError
 
     return {
       registration: (reg
         ? ({
             id: reg.id,
             created_at: reg.created_at,
-            race_type: event?.race_type ?? null,
-            event_title: event?.title ?? null,
+            race_type: ev?.race_type ?? null,
+            event_title: ev?.title ?? null,
             registrant_email: reg.registrant_email ?? null,
             status: reg.status ?? null,
             payment_status,
             payment_order_status: order?.status ?? null,
             payment_order_id: order?.id ?? null,
             merchant_reference: order?.merchant_reference ?? null,
+            provider_reference: order?.provider_reference ?? null,
             paid_at: tx?.paid_at ?? null,
             user_id: reg.user_id ?? null,
           } satisfies AdminRegistrationRow)

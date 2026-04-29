@@ -39,10 +39,6 @@ const shirtSizes = ['XS', 'S', 'M', 'L', 'XL']
 const cardClass =
   'rounded-xl border border-slate-200 bg-white p-4 shadow-[0_12px_30px_-12px_rgba(15,23,42,0.28),0_6px_14px_-8px_rgba(15,23,42,0.2)] sm:p-5'
 
-function isSupportedRegistrationRaceType(value: string): value is 'criterium' | 'itt' | 'road_race' {
-  return value === 'criterium' || value === 'itt' || value === 'road_race'
-}
-
 export function RegistrationForm() {
   const [params] = useSearchParams()
   const navigate = useNavigate()
@@ -144,10 +140,6 @@ export function RegistrationForm() {
 
     setSubmitting(true)
     try {
-      if (!isSupportedRegistrationRaceType(selectedEvent!.race_type)) {
-        throw new Error(`Unsupported race type for registration: ${selectedEvent!.race_type}`)
-      }
-
       const { registrationId } = await registrationService.createRegistration({
         raceType: selectedEvent!.race_type,
         eventId: selectedEvent!.id,
