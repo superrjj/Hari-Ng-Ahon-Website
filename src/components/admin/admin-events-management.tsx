@@ -7,7 +7,7 @@ import {
 import { toast } from 'sonner'
 import { supabase } from '../../lib/supabase'
 import { adminModulesApi } from '../../services/adminModulesApi'
-import { EmptyState, ModuleShell, formatDate, formatMoney, useModuleLoader } from './admin-module-shared'
+import { ModuleShell, formatDate, formatMoney, useModuleLoader } from './admin-module-shared'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 type Step = 1 | 2 | 3 | 4
@@ -1130,7 +1130,23 @@ export function AdminEventsManagement() {
         </div>
         <div className="mt-3 space-y-2">
           {filteredEvents.length === 0 ? (
-            <EmptyState text="No matching events found." />
+            <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-6 py-10 text-center">
+              {events.length === 0 ? (
+                <>
+                  <p className="text-sm font-semibold text-slate-700">No events yet.</p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Create your first event to display it here.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm font-semibold text-slate-700">No matching events found.</p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Try clearing filters or updating your search keywords.
+                  </p>
+                </>
+              )}
+            </div>
           ) : (
             filteredEvents.map((event, index) => (
               <EventCard

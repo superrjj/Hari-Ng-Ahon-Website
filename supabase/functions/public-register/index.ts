@@ -16,7 +16,8 @@ function textResponse(message: string, status: number) {
 }
 
 type Body = {
-  raceType: 'criterium' | 'itt'
+  raceType: 'criterium' | 'itt' | 'road_race'
+  eventId?: string
   registrantEmail: string
   registrationFee?: number
   rider: {
@@ -70,14 +71,19 @@ Deno.serve(async (req) => {
   const requestedFee = Number(body.registrationFee)
   const effectiveFee = Number.isFinite(requestedFee) && requestedFee > 0 ? requestedFee : null
 
-  const { data: event, error: eventError } = await supabase
+  let eventQuery = supabase
     .from('events')
-    .select('id, registration_fee')
-    .eq('race_type', body.raceType)
+    .select('id, registration_fee, race_type')
     .eq('status', 'published')
-    .order('event_date', { ascending: false })
-    .limit(1)
-    .maybeSingle()
+  if (body.eventId) {
+    eventQuery = eventQuery.eq('id', body.eventId)
+  } else {
+    eventQuery = eventQuery
+      .eq('race_type', body.raceType)
+      .order('event_date', { ascending: false })
+      .limit(1)
+  }
+  const { data: event, error: eventError } = await eventQuery.maybeSingle()
 
   if (eventError) return textResponse(eventError.message, 500)
 

@@ -1,15 +1,16 @@
 import type { ReactNode } from 'react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Bell, LogOut, Menu, ChevronDown } from 'lucide-react'
+import { Bell, LogOut, Menu, ChevronDown, Clock3 } from 'lucide-react'
 import { useAuth } from '../../hooks/useAuth'
 import { supabase } from '../../lib/supabase'
 import { AdminSidebar } from './admin-sidebar'
 
-export function AdminLayout({ children, title = 'Dashboard', subtitle }: { children: ReactNode; title?: string; subtitle?: string }) {
+export function AdminLayout({ children }: { children: ReactNode; title?: string; subtitle?: string }) {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [fullName, setFullName] = useState('')
+  const [now, setNow] = useState(() => new Date())
   const navigate = useNavigate()
   const { logout, session } = useAuth()
   const menuRef = useRef<HTMLDivElement | null>(null)
@@ -21,6 +22,35 @@ export function AdminLayout({ children, title = 'Dashboard', subtitle }: { child
 
   const displayName = session?.user?.email?.split('@')[0] ?? 'Admin'
   const headerName = fullName || session?.user?.user_metadata?.full_name || displayName
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 1000)
+    return () => window.clearInterval(timer)
+  }, [])
+
+  const phDate = useMemo(
+    () =>
+      new Intl.DateTimeFormat('en-PH', {
+        timeZone: 'Asia/Manila',
+        weekday: 'long',
+        month: 'long',
+        day: 'numeric',
+        year: 'numeric',
+      }).format(now),
+    [now],
+  )
+
+  const phTime = useMemo(
+    () =>
+      new Intl.DateTimeFormat('en-PH', {
+        timeZone: 'Asia/Manila',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true,
+      }).format(now),
+    [now],
+  )
 
   useEffect(() => {
     if (!menuOpen) return
@@ -82,11 +112,12 @@ export function AdminLayout({ children, title = 'Dashboard', subtitle }: { child
             >
               <Menu className="h-5 w-5" />
             </button>
-            <div className="min-w-0">
-              <h1 className="truncate text-lg font-semibold text-slate-900 sm:text-xl">{title}</h1>
-              <p className="truncate text-xs text-slate-500 sm:text-sm">
-                {subtitle ?? `Welcome back, ${headerName}! Here's what's happening with your events.`}
-              </p>
+            <div className="hidden md:block">
+              <div className="flex items-center gap-1.5 text-[#0f5890]">
+                <Clock3 className="h-4 w-4" />
+                <p className="text-2xl font-semibold tracking-wide">{phTime}</p>
+              </div>
+              <p className="text-sm text-[#0f5890]">{phDate}</p>
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2 sm:gap-4">

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { registrationService } from '../../services/registrationService'
+import { registrationService, type CheckoutItem, type PendingPaymentDraft } from '../../services/registrationService'
 
 // ─── Step config ──────────────────────────────────────────────────────────────
 
@@ -312,11 +312,61 @@ export function RegistrationPayment() {
   const [agreed, setAgreed] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [pendingDraft, setPendingDraft] = useState<PendingPaymentDraft | null>(null)
+  const [checkoutItem, setCheckoutItem] = useState<CheckoutItem | null>(null)
+  const [checkingDraft, setCheckingDraft] = useState(true)
+  const [cancellingDraft, setCancellingDraft] = useState(false)
+
+  const activeRegistrationId = registrationId ?? pendingDraft?.registrationId ?? null
 
   const merchantReference = useMemo(
-    () => `HNA-${registrationId ?? 'NA'}-${Date.now()}`,
-    [registrationId],
+    () => `HNA-${activeRegistrationId ?? 'NA'}-${Date.now()}`,
+    [activeRegistrationId],
   )
+
+  useEffect(() => {
+    let mounted = true
+    setCheckingDraft(true)
+    void registrationService
+      .getPendingPaymentDraft(registrationId ?? undefined)
+      .then((draft) => {
+        if (!mounted) return
+        setPendingDraft(draft)
+        if (draft) setAgreed(true)
+      })
+      .catch((e) => {
+        if (!mounted) return
+        setError((e as Error).message || 'Failed to check pending payment draft.')
+      })
+      .finally(() => {
+        if (!mounted) return
+        setCheckingDraft(false)
+      })
+    return () => {
+      mounted = false
+    }
+  }, [registrationId])
+
+  useEffect(() => {
+    if (!activeRegistrationId) {
+      setCheckoutItem(null)
+      return
+    }
+    let mounted = true
+    void registrationService
+      .getCheckoutItem(activeRegistrationId)
+      .then((item) => {
+        if (!mounted) return
+        setCheckoutItem(item)
+      })
+      .catch(() => {
+        if (!mounted) return
+        setCheckoutItem(null)
+      })
+    return () => {
+      mounted = false
+    }
+  }, [activeRegistrationId])
 
   useEffect(() => {
     if (!paymentState) return
@@ -351,7 +401,7 @@ export function RegistrationPayment() {
 
   const onSubmit = async () => {
     setError(null)
-    if (!registrationId) {
+    if (!activeRegistrationId) {
       setError('Missing registrationId.')
       return
     }
@@ -362,7 +412,7 @@ export function RegistrationPayment() {
     setSubmitting(true)
     try {
       const payment = await registrationService.createPaymentOrder({
-        registrationId,
+        registrationId: activeRegistrationId,
         amount: 1,
         merchantReference,
         acceptLiability: true,
@@ -377,13 +427,73 @@ export function RegistrationPayment() {
     }
   }
 
+  const onCancelDraft = async () => {
+    if (!pendingDraft) return
+    setError(null)
+    setCancellingDraft(true)
+    try {
+      await registrationService.cancelPendingPaymentDraft(pendingDraft.registrationId)
+      setPendingDraft(null)
+    } catch (e) {
+      setError((e as Error).message || 'Failed to cancel pending draft.')
+    } finally {
+      setCancellingDraft(false)
+    }
+  }
+
   return (
     <>
       <section className="bg-white px-4 py-10 text-slate-900">
         <div className="mx-auto max-w-[760px] space-y-6">
+          {checkingDraft ? (
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+              Checking pending payment...
+            </div>
+          ) : null}
+          {!checkingDraft && pendingDraft ? (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-5">
+              <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">Resume Payment</p>
+              <h2 className="mt-1 text-xl font-semibold text-amber-900">{pendingDraft.eventTitle}</h2>
+              <p className="mt-2 text-sm text-amber-800">
+                A pending payment was found. Continue to complete your transaction.
+              </p>
+              <div className="mt-3 grid gap-2 text-sm text-amber-900 sm:grid-cols-2">
+                <p>
+                  Status: <span className="font-semibold uppercase">{pendingDraft.status}</span>
+                </p>
+                <p>
+                  Total: <span className="font-semibold">PHP {pendingDraft.amount.toFixed(2)}</span>
+                </p>
+                <p>
+                  Race: <span className="font-semibold">{pendingDraft.raceType}</span>
+                </p>
+                <p>
+                  Registration: <span className="font-mono text-xs">{pendingDraft.registrationId}</span>
+                </p>
+              </div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => void onSubmit()}
+                  disabled={submitting}
+                  className="inline-flex items-center rounded-md bg-[#cfae3f] px-5 py-2.5 text-sm font-semibold text-black transition hover:bg-[#dab852] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {submitting ? 'Redirecting…' : 'Continue Payment'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void onCancelDraft()}
+                  disabled={cancellingDraft}
+                  className="inline-flex items-center rounded-md border border-amber-300 bg-white px-5 py-2.5 text-sm font-semibold text-amber-900 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {cancellingDraft ? 'Cancelling…' : 'Cancel Draft'}
+                </button>
+              </div>
+            </div>
+          ) : null}
           {paymentState === 'cancelled' ? (
             <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-              Payment was cancelled. You can try again when ready.
+              Payment window was closed. Your transaction remains pending and can be resumed.
             </div>
           ) : null}
           {paymentState === 'failed' ? (
@@ -405,12 +515,23 @@ export function RegistrationPayment() {
           {/* Fee summary */}
           <div className="rounded-lg border border-slate-200 bg-white p-5 text-sm text-slate-800">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-slate-600">Registration fee</p>
-              <p className="font-medium">₱1.00 (Testing fee)</p>
+              <div>
+                <p className="text-slate-600">Registration fee</p>
+                <p className="text-xs text-slate-500">
+                  {checkoutItem?.eventTitle ?? pendingDraft?.eventTitle ?? 'Event Registration'}
+                  {' • '}
+                  {checkoutItem?.raceType ?? pendingDraft?.raceType ?? '-'}
+                </p>
+              </div>
+              <p className="font-medium">
+                ₱{Number(checkoutItem?.amount ?? pendingDraft?.amount ?? 1).toFixed(2)}
+              </p>
             </div>
             <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3">
               <p className="text-slate-600">Total</p>
-              <p className="text-lg font-semibold text-slate-900">₱1.00</p>
+              <p className="text-lg font-semibold text-slate-900">
+                ₱{Number(checkoutItem?.amount ?? pendingDraft?.amount ?? 1).toFixed(2)}
+              </p>
             </div>
           </div>
 
@@ -422,8 +543,8 @@ export function RegistrationPayment() {
               registration stays pending until webhook confirmation marks the
               payment as paid.
             </p>
-            {registrationId ? (
-              <p className="text-xs text-slate-500">Registration reference: <span className="font-mono">{registrationId}</span></p>
+            {activeRegistrationId ? (
+              <p className="text-xs text-slate-500">Registration reference: <span className="font-mono">{activeRegistrationId}</span></p>
             ) : null}
           </div>
 

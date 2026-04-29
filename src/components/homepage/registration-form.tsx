@@ -1,6 +1,8 @@
-import { useMemo, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useEffect, useMemo, useState } from 'react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { api } from '../../services/api'
 import { registrationService } from '../../services/registrationService'
+import type { Event } from '../../types'
 
 const categories = [
   'Age Category',
@@ -37,7 +39,12 @@ const shirtSizes = ['XS', 'S', 'M', 'L', 'XL']
 const cardClass =
   'rounded-xl border border-slate-200 bg-white p-4 shadow-[0_12px_30px_-12px_rgba(15,23,42,0.28),0_6px_14px_-8px_rgba(15,23,42,0.2)] sm:p-5'
 
+function isSupportedRegistrationRaceType(value: string): value is 'criterium' | 'itt' | 'road_race' {
+  return value === 'criterium' || value === 'itt' || value === 'road_race'
+}
+
 export function RegistrationForm() {
+  const [params] = useSearchParams()
   const navigate = useNavigate()
   const [form, setForm] = useState({
     email: '',
@@ -55,8 +62,38 @@ export function RegistrationForm() {
   const [birthYear, setBirthYear] = useState('')
   const [category, setCategory] = useState('')
   const [shirtSize, setShirtSize] = useState('')
-  const [eventKey, setEventKey] = useState<'criterium' | 'itt'>('criterium')
+  const [events, setEvents] = useState<Event[]>([])
+  const [eventsLoading, setEventsLoading] = useState(true)
+  const [eventId, setEventId] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  useEffect(() => {
+    let active = true
+    setEventsLoading(true)
+    void api
+      .upcomingEvents()
+      .then((data) => {
+        if (!active) return
+        setEvents(data)
+        const queryEventId = params.get('eventId')
+        const matched = queryEventId ? data.find((item) => item.id === queryEventId) : null
+        const fallback = data[0]?.id ?? ''
+        setEventId(matched?.id ?? fallback)
+      })
+      .catch((e) => {
+        if (!active) return
+        setError((e as Error).message || 'Failed to load events.')
+      })
+      .finally(() => {
+        if (!active) return
+        setEventsLoading(false)
+      })
+    return () => {
+      active = false
+    }
+  }, [params])
+
+  const selectedEvent = useMemo(() => events.find((item) => item.id === eventId) ?? null, [events, eventId])
+
   const [error, setError] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
 
@@ -98,6 +135,7 @@ export function RegistrationForm() {
       if (!birthYear) errors.birthYear = 'Birth year is required.'
     }
     if (!shirtSize) errors.shirtSize = 'Please select a shirt size.'
+    if (!selectedEvent) errors.event = 'Please select an event.'
 
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors)
@@ -106,9 +144,14 @@ export function RegistrationForm() {
 
     setSubmitting(true)
     try {
+      if (!isSupportedRegistrationRaceType(selectedEvent!.race_type)) {
+        throw new Error(`Unsupported race type for registration: ${selectedEvent!.race_type}`)
+      }
+
       const { registrationId } = await registrationService.createRegistration({
-        raceType: eventKey,
-        registrationFee: 1,
+        raceType: selectedEvent!.race_type,
+        eventId: selectedEvent!.id,
+        registrationFee: Number(selectedEvent!.registration_fee ?? 0),
         registrantEmail: form.email,
         rider: {
           firstName: form.firstName,
@@ -161,27 +204,26 @@ export function RegistrationForm() {
           <div className="space-y-2">
             <label className="text-sm font-semibold text-slate-900">Event <span className="text-rose-500">*</span></label>
             <div className="flex flex-col gap-2 sm:gap-2.5">
-              <button
-                type="button"
-                onClick={() => setEventKey('criterium')}
-                className={`flex items-center gap-2 rounded-md border px-3 py-2 text-left text-sm ${
-                  eventKey === 'criterium' ? 'border-[#cfae3f] bg-[#fff6d6]' : 'border-slate-300 bg-white'
-                }`}
-              >
-                <span className={`h-3 w-3 rounded-sm border ${eventKey === 'criterium' ? 'bg-[#cfae3f] border-[#cfae3f]' : 'border-slate-400'}`} />
-                Criterium
-              </button>
-              <button
-                type="button"
-                onClick={() => setEventKey('itt')}
-                className={`flex items-center gap-2 rounded-md border px-3 py-2 text-left text-sm ${
-                  eventKey === 'itt' ? 'border-[#cfae3f] bg-[#fff6d6]' : 'border-slate-300 bg-white'
-                }`}
-              >
-                <span className={`h-3 w-3 rounded-sm border ${eventKey === 'itt' ? 'bg-[#cfae3f] border-[#cfae3f]' : 'border-slate-400'}`} />
-                Individual Time Trial
-              </button>
+              {eventsLoading ? <p className="text-xs text-slate-500">Loading events...</p> : null}
+              {events.map((event) => (
+                <button
+                  key={event.id}
+                  type="button"
+                  onClick={() => setEventId(event.id)}
+                  className={`flex items-center gap-2 rounded-md border px-3 py-2 text-left text-sm ${
+                    eventId === event.id ? 'border-[#cfae3f] bg-[#fff6d6]' : 'border-slate-300 bg-white'
+                  }`}
+                >
+                  <span className={`h-3 w-3 rounded-sm border ${eventId === event.id ? 'bg-[#cfae3f] border-[#cfae3f]' : 'border-slate-400'}`} />
+                  <span className="flex-1">{event.title}</span>
+                  <span className="text-xs text-slate-500">₱{Number(event.registration_fee ?? 0).toLocaleString()}</span>
+                </button>
+              ))}
+              {!eventsLoading && events.length === 0 ? (
+                <p className="text-xs text-rose-600">No published events available right now.</p>
+              ) : null}
             </div>
+            {fieldErrors.event && <p className="text-xs text-rose-500">{fieldErrors.event}</p>}
           </div>
         </div>
 

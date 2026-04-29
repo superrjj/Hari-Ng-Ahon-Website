@@ -25,11 +25,11 @@ type NavItem = { to: string; label: string; icon: typeof LayoutDashboard; end?: 
 
 const mainNav: NavItem[] = [
   { to: '/admin', label: 'Dashboard', icon: LayoutDashboard, end: true },
-  { to: '/admin/events', label: 'Events Management', icon: CalendarDays },
+  { to: '/admin/events', label: 'Events', icon: CalendarDays },
   { to: '/admin/registrations', label: 'Registrations', icon: ClipboardList },
   { to: '/admin/payments', label: 'Online Payments', icon: CreditCard },
   { to: '/admin/bibs', label: 'Auto Race Bib Generator', icon: Hash },
-  { to: '/admin/results', label: 'Results Management', icon: Trophy },
+  { to: '/admin/results', label: 'Results', icon: Trophy },
   { to: '/admin/announcements', label: 'Announcements', icon: Megaphone },
   { to: '/admin/gallery', label: 'Gallery', icon: Images },
   { to: '/admin/reports', label: 'Reports', icon: FileBarChart },

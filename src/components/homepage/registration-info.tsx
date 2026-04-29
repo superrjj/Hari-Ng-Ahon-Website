@@ -1,5 +1,9 @@
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
+import { api } from '../../services/api'
+import { registrationService } from '../../services/registrationService'
+import type { Event } from '../../types'
 
 const roadBikeCategories = [
   'RB OPEN/ELITE',
@@ -25,6 +29,63 @@ const mountainBikeCategories = [
 
 export function RegistrationInfo() {
   const { session } = useAuth()
+  const [events, setEvents] = useState<Event[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [pendingRegistrationId, setPendingRegistrationId] = useState<string | null>(null)
+
+  useEffect(() => {
+    let active = true
+    setLoading(true)
+    void api
+      .upcomingEvents()
+      .then((data) => {
+        if (!active) return
+        setEvents(data)
+      })
+      .catch((e) => {
+        if (!active) return
+        setError((e as Error).message || 'Failed to load events.')
+      })
+      .finally(() => {
+        if (!active) return
+        setLoading(false)
+      })
+    return () => {
+      active = false
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!session) {
+      setPendingRegistrationId(null)
+      return
+    }
+    let active = true
+    void registrationService
+      .getPendingPaymentDraft()
+      .then((draft) => {
+        if (!active) return
+        setPendingRegistrationId(draft?.registrationId ?? null)
+      })
+      .catch(() => {
+        if (!active) return
+        setPendingRegistrationId(null)
+      })
+    return () => {
+      active = false
+    }
+  }, [session])
+
+  const selectedEvent = useMemo(() => events[0] ?? null, [events])
+  const eventDate = selectedEvent?.event_date ? new Date(selectedEvent.event_date).toLocaleDateString() : 'TBA'
+  const eventRace = selectedEvent?.race_type ?? 'Race'
+  const registrationFee = Number(selectedEvent?.registration_fee ?? 0)
+  const nextPath = pendingRegistrationId
+    ? `/register/payment?registrationId=${encodeURIComponent(pendingRegistrationId)}`
+    : selectedEvent
+      ? `/register/form?eventId=${encodeURIComponent(selectedEvent.id)}`
+      : '/register/form'
 
   return (
     <section className="bg-white px-4 py-8 text-slate-900 sm:px-6 sm:py-10 lg:px-8">
@@ -32,20 +93,20 @@ export function RegistrationInfo() {
         <img src="/hna-banner-1.png" alt="Hari ng Ahon 2026 banner" className="w-full rounded-lg object-cover" />
 
         <header className="space-y-3">
-          <p className="text-sm font-medium text-slate-600">Hari ng Ahon 2026</p>
-          <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl md:text-4xl">Criterium & ITT</h1>
+          <p className="text-sm font-medium text-slate-600">{selectedEvent?.title ?? 'Hari ng Ahon'}</p>
+          <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl md:text-4xl">{eventRace}</h1>
           <dl className="grid grid-cols-1 gap-2 text-sm text-slate-800 sm:gap-3 md:grid-cols-3">
             <div className="rounded-md border border-slate-200 bg-white px-3 py-2 shadow-[0_12px_30px_-12px_rgba(15,23,42,0.28),0_6px_14px_-8px_rgba(15,23,42,0.2)]">
               <dt className="text-xs text-slate-500">Race date</dt>
-              <dd className="font-medium">May 30–31, 2026</dd>
+              <dd className="font-medium">{eventDate}</dd>
             </div>
             <div className="rounded-md border border-slate-200 bg-white px-3 py-2 shadow-[0_12px_30px_-12px_rgba(15,23,42,0.28),0_6px_14px_-8px_rgba(15,23,42,0.2)]">
-              <dt className="text-xs text-slate-500">Criterium</dt>
-              <dd className="font-medium">Burnham Park</dd>
+              <dt className="text-xs text-slate-500">Venue</dt>
+              <dd className="font-medium">{selectedEvent?.venue ?? 'TBA'}</dd>
             </div>
             <div className="rounded-md border border-slate-200 bg-white px-3 py-2 shadow-[0_12px_30px_-12px_rgba(15,23,42,0.28),0_6px_14px_-8px_rgba(15,23,42,0.2)]">
-              <dt className="text-xs text-slate-500">ITT</dt>
-              <dd className="font-medium">Lion&apos;s Head – Radar</dd>
+              <dt className="text-xs text-slate-500">Status</dt>
+              <dd className="font-medium capitalize">{selectedEvent?.status ?? 'draft'}</dd>
             </div>
           </dl>
         </header>
@@ -78,7 +139,7 @@ export function RegistrationInfo() {
           </p>
           <div className="flex flex-wrap items-center gap-3">
             <span className="rounded-md bg-[#cfae3f] px-3 py-1 text-sm font-semibold text-black">Tier 1</span>
-            <span className="text-sm text-slate-800">₱1 (Testing fee)</span>
+            <span className="text-sm text-slate-800">₱{registrationFee.toLocaleString()} </span>
             <span className="text-xs text-slate-500">Current</span>
           </div>
           <p className="text-xs text-slate-500">
@@ -129,8 +190,15 @@ export function RegistrationInfo() {
         </section>
 
         <div className="pt-2">
+          {loading ? <p className="text-sm text-slate-500">Loading available events...</p> : null}
+          {error ? <p className="text-sm text-rose-600">{error}</p> : null}
+          {pendingRegistrationId ? (
+            <p className="mb-2 text-sm text-amber-700">
+              You have a pending checkout. Clicking Next will resume your payment.
+            </p>
+          ) : null}
           <Link
-            to={session ? '/register/form' : '/auth?redirect=%2Fregister%2Fform'}
+            to={session ? nextPath : `/auth?redirect=${encodeURIComponent(nextPath)}`}
             className="inline-flex w-full items-center justify-center rounded-md bg-[#cfae3f] px-5 py-2.5 text-sm font-semibold text-black transition hover:bg-[#dab852] sm:w-auto"
           >
             Next
