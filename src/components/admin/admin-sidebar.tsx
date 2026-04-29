@@ -83,10 +83,10 @@ export function AdminSidebar({
     >
       <div className="flex items-center justify-between gap-2 border-b border-slate-200 px-4 py-4">
         <Link to="/admin" className="flex min-w-0 items-center gap-2" onClick={onCloseMobile}>
-          <img src="/hna-logo.jpg" alt="Hari ng Ahon" className="h-9 w-9 shrink-0 rounded-lg object-cover" />
+          <img src="/all_out_multisports.png" alt="All Out Multisports" className="h-12 w-12 shrink-0 rounded-lg object-cover" />
           <div className="min-w-0">
-            <p className="truncate text-[10px] font-semibold uppercase tracking-wide text-slate-900">Hari ng Ahon 2026</p>
-            <p className="truncate text-[11px] text-slate-500">Cycling Event System</p>
+            <p className="truncate text-[14px] font-semibold uppercase tracking-wide text-slate-900">All Out Multisports</p>
+            <p className="truncate text-[12px] text-slate-500">Cycling Event System</p>
           </div>
         </Link>
         <button

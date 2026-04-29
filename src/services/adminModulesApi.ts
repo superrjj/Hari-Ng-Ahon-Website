@@ -14,7 +14,7 @@ export const adminModulesApi = {
       supabase
         .from('events')
         .select(
-          'id, title, race_type, venue, event_date, registration_fee, status, rider_limit, registration_closes_at, published_at',
+          'id, title, description, race_type, venue, event_date, start_time, registration_fee, status, rider_limit, registration_deadline, registration_closes_at, published_at, poster_url, route_map_url, prize_pool, short_description, banner_url, organizer_name, organizer_contact, organizer_email, bib_claim_instructions',
         )
         .order('event_date', { ascending: false })
         .limit(12),
