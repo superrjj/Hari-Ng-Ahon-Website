@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Menu, X } from 'lucide-react'
+import { Menu, User, X } from 'lucide-react'
 import { Link, NavLink } from 'react-router-dom'
 import { toast } from 'sonner'
 import { useAuth } from '../../hooks/useAuth'
@@ -31,8 +31,8 @@ export function Header() {
   }
 
   return (
-    <header className="sticky top-0 z-40 border-b border-slate-100 bg-white/98 shadow-[0_1px_12px_0_rgba(0,0,0,0.06)] backdrop-blur-md">
-      <div className="mx-auto flex max-w-7xl items-center gap-4 px-4 py-2.5">
+    <header className="sticky top-0 z-40 border-b border-slate-200 bg-white shadow-[0_1px_10px_0_rgba(0,0,0,0.05)]">
+      <div className="mx-auto flex max-w-7xl items-center gap-4 px-4 py-3">
         {/* Logo */}
         <Link
           to={role === 'admin' ? '/admin' : '/'}
@@ -44,19 +44,16 @@ export function Header() {
         </Link>
 
         {/* Desktop nav */}
-        <div className="ml-auto flex items-center gap-2">
-          <nav
-            className="hidden items-center gap-0.5 text-sm font-medium md:flex"
-            aria-label="Main navigation"
-          >
+        <div className="ml-auto flex items-center gap-6">
+          <nav className="hidden items-center gap-6 text-sm font-semibold md:flex" aria-label="Main navigation">
             {role === 'admin' ? (
               <NavLink
                 to="/admin"
                 className={({ isActive }) =>
                   `rounded-lg px-3.5 py-2 transition-colors duration-150 ${
                     isActive
-                      ? 'bg-slate-900 text-white'
-                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                      ? 'rounded-full bg-[#f3d423] px-4 text-black'
+                      : 'text-slate-700 hover:text-slate-950'
                   }`
                 }
               >
@@ -68,7 +65,7 @@ export function Header() {
                   <button
                     key={item.label}
                     type="button"
-                    className="rounded-lg px-3.5 py-2 text-slate-600 transition-colors duration-150 hover:bg-slate-100 hover:text-slate-900"
+                    className="rounded-full px-2.5 py-2 text-slate-700 transition-colors duration-150 hover:text-slate-950"
                     onClick={showPendingPageToast}
                   >
                     {item.label}
@@ -77,7 +74,7 @@ export function Header() {
                   <a
                     key={item.label}
                     href={item.to}
-                    className="rounded-lg px-3.5 py-2 text-slate-600 transition-colors duration-150 hover:bg-slate-100 hover:text-slate-900"
+                    className="rounded-full px-2.5 py-2 text-slate-700 transition-colors duration-150 hover:text-slate-950"
                   >
                     {item.label}
                   </a>
@@ -88,8 +85,8 @@ export function Header() {
                     className={({ isActive }) =>
                       `rounded-lg px-3.5 py-2 transition-colors duration-150 ${
                         isActive
-                          ? 'bg-slate-900 text-white'
-                          : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                          ? 'rounded-full bg-[#f3d423] px-4 text-black'
+                          : 'text-slate-700 hover:text-slate-950'
                       }`
                     }
                   >
@@ -101,22 +98,23 @@ export function Header() {
           </nav>
 
           {/* Divider between nav and auth */}
-          <div className="hidden h-5 w-px bg-slate-200 md:block" aria-hidden="true" />
+          <div className="hidden h-6 w-px bg-slate-300 md:block ml-2" aria-hidden="true" />
 
           {/* Auth button */}
           {session ? (
             <button
               type="button"
               onClick={() => void onLogout()}
-              className="hidden rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition-colors duration-150 hover:border-slate-300 hover:bg-slate-50 md:inline-flex"
+              className="hidden rounded-full border border-slate-200 px-5 py-2 text-sm font-semibold text-slate-700 transition-colors duration-150 hover:border-slate-300 hover:bg-slate-50 md:inline-flex ml-2"
             >
               Logout
             </button>
           ) : (
             <Link
               to="/auth?mode=login"
-              className="hidden rounded-lg bg-slate-900 px-5 py-2 text-sm font-medium text-white transition-colors duration-150 hover:bg-slate-700 md:inline-flex"
+              className="hidden items-center gap-2 rounded-full bg-[#0b1f4e] px-5 py-2 text-sm font-semibold text-white transition-colors duration-150 hover:bg-[#102a66] md:inline-flex"
             >
+              <User className="h-4 w-4" />
               Login
             </Link>
           )}
@@ -134,10 +132,10 @@ export function Header() {
         </div>
       </div>
 
-      {/* Mobile nav */}
+      {/* Mobile nav — absolute overlay, does not push content */}
       {mobileOpen && (
         <nav
-          className="border-t border-slate-100 bg-white px-4 pb-4 pt-3 md:hidden"
+          className="absolute left-0 right-0 top-full z-50 border-t border-slate-100 bg-white px-4 pb-4 pt-3 shadow-lg md:hidden"
           aria-label="Mobile navigation"
         >
           <div className="flex flex-col gap-0.5">
@@ -185,7 +183,7 @@ export function Header() {
                     className={({ isActive }) =>
                       `rounded-lg px-3 py-2.5 text-sm font-medium transition-colors duration-150 ${
                         isActive
-                          ? 'bg-slate-900 text-white'
+                          ? 'bg-[#f3d423] text-black'
                           : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
                       }`
                     }
@@ -209,7 +207,7 @@ export function Header() {
               ) : (
                 <Link
                   to="/auth?mode=login"
-                  className="block w-full rounded-lg bg-slate-900 px-3 py-2.5 text-center text-sm font-medium text-white transition-colors duration-150 hover:bg-slate-700"
+                  className="block w-full rounded-lg bg-[#0b1f4e] px-3 py-2.5 text-center text-sm font-medium text-white transition-colors duration-150 hover:bg-slate-700"
                   onClick={() => setMobileOpen(false)}
                 >
                   Login

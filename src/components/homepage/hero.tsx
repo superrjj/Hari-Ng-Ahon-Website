@@ -1,3 +1,4 @@
+import { User } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
 export function Hero() {
@@ -7,9 +8,10 @@ export function Hero() {
         <img
           src="/bg2.png"
           alt="Hero race"
-          className="absolute inset-0 h-full w-full object-cover opacity-70"
+          className="absolute inset-0 h-full w-full object-cover opacity-90"
         />
-        <div className="absolute inset-0 bg-linear-to-t from-[#131313]/70 via-[#131313]/45 to-transparent" />
+        <div className="absolute inset-0 bg-linear-to-r from-black/70 via-black/35 to-transparent" />
+        <div className="absolute inset-x-0 bottom-0 h-40 bg-linear-to-t from-black/45 via-black/20 to-transparent" />
 
         <div className="relative z-10 mx-auto w-full max-w-7xl">
           <p className="inline-block bg-[#cfae3f] px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.15em] text-black sm:px-4 sm:py-2 sm:text-xs">
@@ -29,8 +31,9 @@ export function Hero() {
           <div className="mt-7 flex flex-wrap gap-3 sm:mt-8 sm:gap-4">
             <Link
               to="/register/info"
-              className="w-full border-2 border-[#cfae3f] bg-[#cfae3f] px-5 py-3 text-center text-[11px] font-bold uppercase tracking-[0.15em] text-black transition-colors hover:bg-[#e2bf4e] sm:w-auto sm:px-8 sm:py-4 sm:text-xs"
+              className="inline-flex items-center gap-2.5 rounded-full bg-[#cfae3f] px-6 py-3 text-[11px] font-bold uppercase tracking-[0.15em] text-black transition-colors hover:bg-[#e2bf4e] sm:px-8 sm:py-4 sm:text-xs"
             >
+              <User className="h-4 w-4" />
               Register Now
             </Link>
           </div>
