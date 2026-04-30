@@ -13,6 +13,8 @@
     "@hookform/resolvers": "^5.2.2",
     "@supabase/supabase-js": "^2.104.1",
     "@tailwindcss/vite": "^4.2.4",
+    "@zxing/browser": "^0.2.0",
+    "@zxing/library": "^0.22.0",
     "jsonwebtoken": "^9.0.3",
     "jwt-decode": "^4.0.0",
     "lucide-react": "^1.11.0",
