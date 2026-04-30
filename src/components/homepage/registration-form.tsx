@@ -1,47 +1,126 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { api } from '../../services/api'
+import { supabase } from '../../lib/supabase'
 import { registrationService } from '../../services/registrationService'
 import type { Event } from '../../types'
 
-const categories = [
-  'Age Category',
-  'OPEN Mountain Bike',
-  'OPEN Road Bike',
-  'OPEN Gravel Bike',
-  'Public Servant',
-  'Heavyweight',
-]
+// ─── Types ───────────────────────────────────────────────────────────────────
 
-const roadBikeCategories = [
-  'RB OPEN/ELITE',
-  'YOUTH (15 and Below)',
-  'Junior (16-18)',
-  'Under 23 (19-22)',
-  'Masters A (23-34)',
-  'Masters B (35-44)',
-  'Masters C (45-54)',
-  'Masters D (55 and above)',
-]
+interface EventType {
+  slug: string
+  name: string
+}
 
-const mountainBikeCategories = [
-  'MTB OPEN/Elite',
-  'YOUTH (15 and Below)',
-  'Junior (16-18)',
-  'Under 23 (19-22)',
-  'Masters A (23-34)',
-  'Masters B (35-44)',
-  'Masters C (45-54)',
-  'Masters D (55 and above)',
-]
+interface RaceCategory {
+  id: string
+  discipline: string
+  category_name: string
+  code: string
+  rider_limit: number | null
+  active: boolean
+}
+
+interface DisciplineGroup {
+  discipline: string
+  categories: RaceCategory[]
+}
+
+// ─── Constants ───────────────────────────────────────────────────────────────
 
 const shirtSizes = ['XS', 'S', 'M', 'L', 'XL']
 const cardClass =
   'rounded-xl border border-slate-200 bg-white p-4 shadow-[0_12px_30px_-12px_rgba(15,23,42,0.28),0_6px_14px_-8px_rgba(15,23,42,0.2)] sm:p-5'
 
+// ─── Age category detection & resolution ────────────────────────────────────
+
+// Patterns that indicate a category is age-graded (not open/heavyweight/etc.)
+const AGE_PATTERNS = [
+  /youth/i,
+  /junior/i,
+  /under\s*23/i,
+  /u23/i,
+  /masters?/i,
+  /\b15\b/,
+  /\b16\b/,
+  /18\b/,
+  /19\b/,
+  /\b22\b/,
+  /\b23\b/,
+  /\b34\b/,
+  /\b35\b/,
+  /\b44\b/,
+  /\b45\b/,
+  /\b54\b/,
+  /\b55\b/,
+]
+
+/**
+ * Returns true if the category list for this discipline contains
+ * at least one age-graded entry (Youth, Junior, Masters, etc.).
+ */
+function disciplineHasAgeCategories(categoryNames: string[]): boolean {
+  return categoryNames.some((name) => AGE_PATTERNS.some((re) => re.test(name)))
+}
+
+/**
+ * Compute race age per the rules: age on December 31 of the competition year.
+ * Uses the full birth date so month/day are taken into account.
+ */
+function computeRaceAge(birthDateStr: string): number | null {
+  if (!birthDateStr) return null
+  const dob = new Date(birthDateStr)
+  if (Number.isNaN(dob.getTime())) return null
+  const competitionYear = new Date().getFullYear()
+  // December 31 of competition year
+  const dec31 = new Date(competitionYear, 11, 31)
+  let age = dec31.getFullYear() - dob.getFullYear()
+  // Adjust if birthday hasn't occurred yet by Dec 31 (it always has, but keep safe)
+  const m = dec31.getMonth() - dob.getMonth()
+  if (m < 0 || (m === 0 && dec31.getDate() < dob.getDate())) age--
+  return age
+}
+
+/**
+ * Match an age to an age-graded category by keyword-scanning the category names.
+ * This is robust to DB ordering changes.
+ */
+function resolveAgeCategoryByKeyword(age: number, categoryNames: string[]): string {
+  // Only consider age-graded categories
+  const ageCats = categoryNames.filter((name) => AGE_PATTERNS.some((re) => re.test(name)))
+
+  // Try explicit bracket matching first (e.g. "15 and Below", "16-18", "19-22", etc.)
+  for (const name of ageCats) {
+    if (age <= 15 && (/15\s*(and\s*)?below/i.test(name) || /youth/i.test(name))) return name
+    if (age >= 16 && age <= 18 && (/16[-–]18/i.test(name) || /junior/i.test(name))) return name
+    if (age >= 19 && age <= 22 && (/19[-–]22/i.test(name) || /under\s*23/i.test(name) || /u23/i.test(name))) return name
+    if (age >= 23 && age <= 34 && (/23[-–]34/i.test(name) || /masters?\s*a/i.test(name))) return name
+    if (age >= 35 && age <= 44 && (/35[-–]44/i.test(name) || /masters?\s*b/i.test(name))) return name
+    if (age >= 45 && age <= 54 && (/45[-–]54/i.test(name) || /masters?\s*c/i.test(name))) return name
+    if (age >= 55 && (/55\s*(and\s*)?above/i.test(name) || /masters?\s*d/i.test(name))) return name
+  }
+
+  // Fallback: pick last age-graded category for seniors
+  if (ageCats.length > 0) return ageCats[ageCats.length - 1]
+  return ''
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function formatSlug(slug: string): string {
+  return slug
+    .split(/[-_]/)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ')
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────────
+
 export function RegistrationForm() {
   const [params] = useSearchParams()
   const navigate = useNavigate()
+
+  // ── Form state ─────────────────────────────────────────────────────────────
   const [form, setForm] = useState({
     email: '',
     firstName: '',
@@ -53,15 +132,19 @@ export function RegistrationForm() {
     emergencyContactName: '',
     emergencyContactNumber: '',
     teamName: '',
-    discipline: 'Road Bike',
+    discipline: '',
   })
-  const [birthYear, setBirthYear] = useState('')
   const [category, setCategory] = useState('')
   const [shirtSize, setShirtSize] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
+
+  // ── Events ─────────────────────────────────────────────────────────────────
   const [events, setEvents] = useState<Event[]>([])
   const [eventsLoading, setEventsLoading] = useState(true)
   const [eventId, setEventId] = useState('')
-  const [submitting, setSubmitting] = useState(false)
+
   useEffect(() => {
     let active = true
     setEventsLoading(true)
@@ -83,35 +166,170 @@ export function RegistrationForm() {
         if (!active) return
         setEventsLoading(false)
       })
-    return () => {
-      active = false
-    }
+    return () => { active = false }
   }, [params])
 
   const selectedEvent = useMemo(() => events.find((item) => item.id === eventId) ?? null, [events, eventId])
+  const registrationFee = Number(selectedEvent?.registration_fee ?? 0)
 
-  const [error, setError] = useState<string | null>(null)
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
+  // ── Event Types (from event_types table + event's race_type slugs) ─────────
+  const [eventTypes, setEventTypes] = useState<EventType[]>([])
+  const [eventTypesLoading, setEventTypesLoading] = useState(false)
+  const [selectedEventTypeSlugs, setSelectedEventTypeSlugs] = useState<string[]>([])
 
-  const raceAge = useMemo(() => {
-    const year = Number.parseInt(birthYear, 10)
-    if (Number.isNaN(year)) return '-'
-    return String(new Date().getFullYear() - year)
-  }, [birthYear])
+  useEffect(() => {
+    if (!selectedEvent) {
+      setEventTypes([])
+      setSelectedEventTypeSlugs([])
+      return
+    }
 
-  const resolvedAgeCategory = useMemo(() => {
-    const age = Number.parseInt(raceAge, 10)
-    if (Number.isNaN(age)) return ''
-    const cats = form.discipline === 'Mountain Bike' ? mountainBikeCategories : roadBikeCategories
-    if (age <= 15) return cats[1]
-    if (age <= 18) return cats[2]
-    if (age <= 22) return cats[3]
-    if (age <= 34) return cats[4]
-    if (age <= 44) return cats[5]
-    if (age <= 54) return cats[6]
-    return cats[7]
-  }, [raceAge, form.discipline])
+    // Parse slugs from the event's race_type field (comma-separated)
+    const rawSlugs = String(selectedEvent.race_type ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
 
+    if (rawSlugs.length === 0) {
+      setEventTypes([])
+      setSelectedEventTypeSlugs([])
+      return
+    }
+
+    let active = true
+    setEventTypesLoading(true)
+
+      ; (async () => {
+        try {
+          const { data, error: err } = await supabase
+            .from('event_types')
+            .select('slug, name')
+            .in('slug', rawSlugs)
+
+          if (!active) return
+          if (err || !data || data.length === 0) {
+            // Fallback: derive name from slug if table query fails or returns nothing
+            setEventTypes(rawSlugs.map((slug) => ({ slug, name: formatSlug(slug) })))
+          } else {
+            // Preserve order from rawSlugs
+            const bySlug = new Map((data as EventType[]).map((t) => [t.slug, t]))
+            setEventTypes(rawSlugs.map((slug) => bySlug.get(slug) ?? { slug, name: formatSlug(slug) }))
+          }
+        } catch {
+          if (!active) return
+          setEventTypes(rawSlugs.map((slug) => ({ slug, name: formatSlug(slug) })))
+        } finally {
+          if (!active) return
+          setEventTypesLoading(false)
+        }
+      })()
+
+    // Reset selections when event changes
+    setSelectedEventTypeSlugs([])
+
+    return () => { active = false }
+  }, [selectedEvent])
+
+  const toggleEventType = (slug: string) => {
+    setSelectedEventTypeSlugs((prev) =>
+      prev.includes(slug) ? prev.filter((s) => s !== slug) : [...prev, slug],
+    )
+  }
+
+  // ── Computed total fee ─────────────────────────────────────────────────────
+  const totalFee = useMemo(
+    () => registrationFee * Math.max(1, selectedEventTypeSlugs.length),
+    [registrationFee, selectedEventTypeSlugs.length],
+  )
+
+  // ── Race Categories from DB ────────────────────────────────────────────────
+  const [disciplineGroups, setDisciplineGroups] = useState<DisciplineGroup[]>([])
+  const [categoriesLoading, setCategoriesLoading] = useState(false)
+
+  useEffect(() => {
+    if (!selectedEvent?.id) {
+      setDisciplineGroups([])
+      setForm((p) => ({ ...p, discipline: '' }))
+      setCategory('')
+      return
+    }
+    let active = true
+    setCategoriesLoading(true)
+
+      ; (async () => {
+        try {
+          const { data, error: err } = await supabase
+            .from('race_categories')
+            .select('id, discipline, category_name, code, rider_limit, active')
+            .eq('event_id', selectedEvent.id)
+            .eq('active', true)
+
+          if (!active) return
+          if (err || !data) {
+            setDisciplineGroups([])
+            return
+          }
+          const rows = data as RaceCategory[]
+          const groupMap = new Map<string, RaceCategory[]>()
+          for (const row of rows) {
+            const disc = (row.discipline ?? '').trim() || 'General'
+            if (!groupMap.has(disc)) groupMap.set(disc, [])
+            groupMap.get(disc)!.push(row)
+          }
+          const groups: DisciplineGroup[] = Array.from(groupMap.entries()).map(
+            ([discipline, categories]) => ({ discipline, categories }),
+          )
+          setDisciplineGroups(groups)
+
+          // Auto-select first discipline
+          const firstDisc = groups[0]?.discipline ?? ''
+          setForm((p) => ({ ...p, discipline: firstDisc }))
+          setCategory('')
+        } finally {
+          if (!active) return
+          setCategoriesLoading(false)
+        }
+      })()
+
+    return () => { active = false }
+  }, [selectedEvent?.id])
+
+  // The categories available for the currently selected discipline
+  const currentDisciplineGroup = useMemo(
+    () => disciplineGroups.find((g) => g.discipline === form.discipline) ?? null,
+    [disciplineGroups, form.discipline],
+  )
+
+  const currentCategoryNames = useMemo(
+    () => (currentDisciplineGroup?.categories ?? []).map((c) => c.category_name),
+    [currentDisciplineGroup],
+  )
+
+  // Does this discipline have age-graded categories (Youth / Junior / Masters)?
+  const hasAgeCategories = useMemo(
+    () => disciplineHasAgeCategories(currentCategoryNames),
+    [currentCategoryNames],
+  )
+
+  // Race age computed from the DOB field (December 31 of competition year rule)
+  const raceAge = useMemo(() => computeRaceAge(form.birthDate), [form.birthDate])
+
+  // The category that best matches the rider's age (only meaningful when discipline has age cats)
+  const suggestedAgeCategory = useMemo(() => {
+    if (!hasAgeCategories || raceAge === null) return ''
+    return resolveAgeCategoryByKeyword(raceAge, currentCategoryNames)
+  }, [hasAgeCategories, raceAge, currentCategoryNames])
+
+  // When the discipline changes and the currently selected category doesn't exist in the new list,
+  // clear it so the rider must re-select.
+  useEffect(() => {
+    if (category && !currentCategoryNames.includes(category)) {
+      setCategory('')
+    }
+  }, [category, currentCategoryNames])
+
+
+  // ── Submit ─────────────────────────────────────────────────────────────────
   const onSubmit = async () => {
     setFieldErrors({})
     setError(null)
@@ -127,11 +345,9 @@ export function RegistrationForm() {
     if (!form.emergencyContactName) errors.emergencyContactName = 'Emergency contact name is required.'
     if (!form.emergencyContactNumber) errors.emergencyContactNumber = 'Emergency contact number is required.'
     if (!category) errors.category = 'Please select a category.'
-    if (category === 'Age Category') {
-      if (!birthYear) errors.birthYear = 'Birth year is required.'
-    }
     if (!shirtSize) errors.shirtSize = 'Please select a shirt size.'
     if (!selectedEvent) errors.event = 'Please select an event.'
+    if (selectedEventTypeSlugs.length === 0) errors.eventTypes = 'Please select at least one event type.'
 
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors)
@@ -140,24 +356,29 @@ export function RegistrationForm() {
 
     setSubmitting(true)
     try {
+      const raceTypeLabel = selectedEventTypeSlugs
+        .map((slug) => eventTypes.find((t) => t.slug === slug)?.name ?? formatSlug(slug))
+        .join(', ')
+
       const { registrationId } = await registrationService.createRegistration({
-        raceType: selectedEvent!.race_type,
+        raceType: raceTypeLabel || (selectedEvent!.race_type ?? ''),
         eventId: selectedEvent!.id,
-        registrationFee: Number(selectedEvent!.registration_fee ?? 0),
+        // Pass computed total so payment page reflects actual charge
+        registrationFee: totalFee,
         registrantEmail: form.email,
         rider: {
           firstName: form.firstName,
           lastName: form.lastName,
           gender: form.gender,
           birthDate: form.birthDate,
-          birthYear: Number.isNaN(Number(birthYear)) ? null : Number(birthYear),
+          birthYear: form.birthDate ? new Date(form.birthDate).getFullYear() : null,
           address: form.address,
           contactNumber: form.contactNumber,
           emergencyContactName: form.emergencyContactName,
           emergencyContactNumber: form.emergencyContactNumber,
           teamName: form.teamName,
           discipline: form.discipline,
-          ageCategory: category === 'Age Category' ? resolvedAgeCategory : category,
+          ageCategory: category,
           jerseySize: shirtSize,
         },
       })
@@ -170,6 +391,7 @@ export function RegistrationForm() {
     }
   }
 
+  // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <section className="bg-white px-4 py-8 text-slate-900 sm:px-6 sm:py-10 lg:px-8">
       <div className="mx-auto w-full max-w-[760px] space-y-5 sm:space-y-6">
@@ -184,6 +406,96 @@ export function RegistrationForm() {
           <p className="text-sm text-slate-600">Fill up the rider information and choose your category.</p>
         </div>
 
+        {/* ── Event & Event Types Card ────────────────────────────────────── */}
+        <div className={`${cardClass} space-y-4`}>
+          {/* Event selector (hidden visually if only one event) */}
+          {events.length > 1 && (
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-slate-900">
+                Event <span className="text-rose-500">*</span>
+              </label>
+              <div className="flex flex-col gap-2">
+                {eventsLoading ? <p className="text-xs text-slate-500">Loading events…</p> : null}
+                {events.map((event) => (
+                  <button
+                    key={event.id}
+                    type="button"
+                    onClick={() => setEventId(event.id)}
+                    className={`flex items-center gap-2 rounded-md border px-3 py-2 text-left text-sm ${eventId === event.id ? 'border-[#cfae3f] bg-[#fff6d6]' : 'border-slate-300 bg-white'
+                      }`}
+                  >
+                    <span
+                      className={`h-3 w-3 rounded-sm border ${eventId === event.id ? 'bg-[#cfae3f] border-[#cfae3f]' : 'border-slate-400'
+                        }`}
+                    />
+                    <span className="flex-1">{event.title}</span>
+                    <span className="text-xs text-slate-500">₱{Number(event.registration_fee ?? 0).toLocaleString()} / type</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Event Types as checkboxes */}
+          <div className="space-y-2">
+            <label className="text-sm font-semibold text-slate-900">
+              Event Type <span className="text-rose-500">*</span>
+            </label>
+            <p className="text-xs text-slate-500">Select one or more event types to join.</p>
+
+            {eventsLoading || eventTypesLoading ? (
+              <p className="text-xs text-slate-500">Loading event types…</p>
+            ) : eventTypes.length === 0 ? (
+              <p className="text-xs text-rose-600">No event types available for this event.</p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {eventTypes.map((et) => {
+                  const checked = selectedEventTypeSlugs.includes(et.slug)
+                  return (
+                    <button
+                      key={et.slug}
+                      type="button"
+                      role="checkbox"
+                      aria-checked={checked}
+                      onClick={() => toggleEventType(et.slug)}
+                      className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${checked
+                          ? 'border-[#cfae3f] bg-[#fff6d6] text-slate-900'
+                          : 'border-slate-300 bg-white text-slate-700 hover:border-[#cfae3f]'
+                        }`}
+                    >
+                      <span
+                        aria-hidden="true"
+                        className={`flex h-4 w-4 items-center justify-center rounded border text-xs ${checked ? 'border-[#cfae3f] bg-[#cfae3f] text-black' : 'border-slate-300 bg-white'
+                          }`}
+                      >
+                        {checked ? '✓' : ''}
+                      </span>
+                      {et.name}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+            {fieldErrors.eventTypes && (
+              <p className="text-xs text-rose-500">{fieldErrors.eventTypes}</p>
+            )}
+          </div>
+
+          {/* Dynamic fee preview */}
+          {selectedEventTypeSlugs.length > 0 && (
+            <div className="rounded-lg border border-[#cfae3f]/40 bg-[#fff6d6] px-4 py-3">
+              <p className="text-xs text-slate-600">
+                {selectedEventTypeSlugs.length} event type{selectedEventTypeSlugs.length > 1 ? 's' : ''} selected
+                &nbsp;×&nbsp;₱{registrationFee.toLocaleString()}
+              </p>
+              <p className="mt-0.5 text-base font-semibold text-slate-900">
+                Total: ₱{totalFee.toLocaleString()}
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* ── Personal Info Card ─────────────────────────────────────────── */}
         <div className={`${cardClass} grid grid-cols-1 gap-4 md:grid-cols-2`}>
           <Field
             label={<>Email <span className="text-rose-500">*</span></>}
@@ -193,33 +505,6 @@ export function RegistrationForm() {
             error={fieldErrors.email}
             onChange={(v) => setForm((p) => ({ ...p, email: v }))}
           />
-          <div className="space-y-2">
-            <label className="text-sm font-semibold text-slate-900">Event <span className="text-rose-500">*</span></label>
-            <div className="flex flex-col gap-2 sm:gap-2.5">
-              {eventsLoading ? <p className="text-xs text-slate-500">Loading events...</p> : null}
-              {events.map((event) => (
-                <button
-                  key={event.id}
-                  type="button"
-                  onClick={() => setEventId(event.id)}
-                  className={`flex items-center gap-2 rounded-md border px-3 py-2 text-left text-sm ${
-                    eventId === event.id ? 'border-[#cfae3f] bg-[#fff6d6]' : 'border-slate-300 bg-white'
-                  }`}
-                >
-                  <span className={`h-3 w-3 rounded-sm border ${eventId === event.id ? 'bg-[#cfae3f] border-[#cfae3f]' : 'border-slate-400'}`} />
-                  <span className="flex-1">{event.title}</span>
-                  <span className="text-xs text-slate-500">₱{Number(event.registration_fee ?? 0).toLocaleString()}</span>
-                </button>
-              ))}
-              {!eventsLoading && events.length === 0 ? (
-                <p className="text-xs text-rose-600">No published events available right now.</p>
-              ) : null}
-            </div>
-            {fieldErrors.event && <p className="text-xs text-rose-500">{fieldErrors.event}</p>}
-          </div>
-        </div>
-
-        <div className={`${cardClass} grid grid-cols-1 gap-4 md:grid-cols-2`}>
           <Field
             label={<>First Name <span className="text-rose-500">*</span></>}
             value={form.firstName}
@@ -285,77 +570,121 @@ export function RegistrationForm() {
           />
         </div>
 
-        <div className={`${cardClass} space-y-2`}>
-          <label className="text-sm font-semibold text-slate-900">Category <span className="text-rose-500">*</span></label>
-          <p className="text-xs text-slate-500">
-            *The organizers reserve the right to merge categories with less than 10 participants.
-          </p>
-          <select
-            value={category}
-            onChange={(e) => setCategory(e.target.value)}
-            className={`w-full rounded-md border bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-[#cfae3f] ${
-              fieldErrors.category ? 'border-rose-400' : 'border-slate-300'
-            }`}
-          >
-            <option value="" disabled>
-              Select category
-            </option>
-            {categories.map((item) => (
-              <option key={item} value={item}>
-                {item}
-              </option>
-            ))}
-          </select>
-          {fieldErrors.category && <p className="text-xs text-rose-500">{fieldErrors.category}</p>}
-        </div>
+        {/* ── Discipline & Category Card ─────────────────────────────────── */}
+        <div className={`${cardClass} space-y-4`}>
+          <div>
+            <label className="text-sm font-semibold text-slate-900">
+              Category <span className="text-rose-500">*</span>
+            </label>
+            <p className="mt-0.5 text-xs text-slate-500">
+              *The organizers reserve the right to merge categories with less than 10 participants.
+            </p>
+          </div>
 
-        {category === 'Age Category' && (
-          <div className={`${cardClass} grid grid-cols-1 gap-4 md:grid-cols-2`}>
-            <SelectField
-              label={<>Discipline <span className="text-rose-500">*</span></>}
-              value={form.discipline}
-              options={['Road Bike', 'Mountain Bike']}
-              onChange={(v) => setForm((p) => ({ ...p, discipline: v }))}
-            />
-            <div className="space-y-2">
-              <label className="text-sm font-semibold text-slate-900">Birth Year <span className="text-rose-500">*</span></label>
-              <input
-                value={birthYear}
-                onChange={(e) => setBirthYear(e.target.value)}
-                className={`w-full rounded-md border bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-[#cfae3f] ${
-                  fieldErrors.birthYear ? 'border-rose-400' : 'border-slate-300'
-                }`}
-              />
-              {fieldErrors.birthYear && <p className="text-xs text-rose-500">{fieldErrors.birthYear}</p>}
+          {categoriesLoading ? (
+            <p className="text-xs text-slate-500">Loading categories…</p>
+          ) : disciplineGroups.length === 0 ? (
+            <p className="text-xs text-rose-600">No categories configured for this event.</p>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2">
+              {/* Discipline selector */}
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-slate-900">
+                  Discipline <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={form.discipline}
+                  onChange={(e) => {
+                    setForm((p) => ({ ...p, discipline: e.target.value }))
+                    setCategory('')
+                  }}
+                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-[#cfae3f]"
+                >
+                  {disciplineGroups.map((g) => (
+                    <option key={g.discipline} value={g.discipline}>
+                      {g.discipline}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Category selector */}
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-slate-900">
+                  Age / Class Category <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                  className={`w-full rounded-md border bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-[#cfae3f] ${fieldErrors.category ? 'border-rose-400' : 'border-slate-300'
+                    }`}
+                >
+                  <option value="" disabled>
+                    Select category
+                  </option>
+                  {currentDisciplineGroup?.categories.map((cat) => (
+                    <option key={cat.id} value={cat.category_name}>
+                      {cat.category_name}
+                    </option>
+                  ))}
+                </select>
+                {fieldErrors.category && (
+                  <p className="text-xs text-rose-500">{fieldErrors.category}</p>
+                )}
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        <div className={`${cardClass} space-y-2 text-sm text-slate-700`}>
-          <p className="text-xs text-slate-500">
-            Age is based on your age on December 31st of the competition year.
-          </p>
-          <div className="flex flex-wrap gap-4">
-            <p>Race Age: <span className="font-semibold text-slate-900">{raceAge}</span></p>
-            <p>Category: <span className="font-semibold text-slate-900">
-              {category === 'Age Category' ? resolvedAgeCategory : category}
-            </span></p>
-          </div>
+          {/* Age-based category suggestion — only shown for age-graded disciplines */}
+          {hasAgeCategories && form.birthDate && suggestedAgeCategory && (
+            <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm">
+              <p className="text-xs text-slate-600">
+                Based on your date of birth, your race age on Dec 31, {new Date().getFullYear()} is{' '}
+                <span className="font-semibold text-slate-900">{raceAge}</span>.
+              </p>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <p className="text-xs text-slate-700">
+                  Suggested category:{' '}
+                  <span className="font-semibold text-slate-900">{suggestedAgeCategory}</span>
+                </p>
+                {category !== suggestedAgeCategory && (
+                  <button
+                    type="button"
+                    onClick={() => setCategory(suggestedAgeCategory)}
+                    className="rounded-md bg-[#1e4a8e] px-3 py-1 text-xs font-semibold text-white hover:bg-[#163b72] transition"
+                  >
+                    Use this category
+                  </button>
+                )}
+                {category === suggestedAgeCategory && (
+                  <span className="text-xs font-semibold text-emerald-700">✓ Applied</span>
+                )}
+              </div>
+            </div>
+          )}
+
+          {!hasAgeCategories && category && (
+            <p className="text-xs text-slate-600">
+              Selected: <span className="font-semibold text-slate-900">{category}</span>
+            </p>
+          )}
         </div>
 
+        {/* ── Shirt Size Card ────────────────────────────────────────────── */}
         <div className={`${cardClass} space-y-3`}>
-          <label className="text-sm font-semibold text-slate-900">Event Shirt <span className="text-rose-500">*</span></label>
+          <label className="text-sm font-semibold text-slate-900">
+            Event Shirt <span className="text-rose-500">*</span>
+          </label>
           <div className="flex flex-wrap gap-2">
             {shirtSizes.map((size) => (
               <button
                 key={size}
                 type="button"
                 onClick={() => setShirtSize(size)}
-                className={`min-w-[3rem] rounded-md border px-3 py-2 text-sm sm:min-w-[3.25rem] ${
-                  shirtSize === size
+                className={`min-w-[3rem] rounded-md border px-3 py-2 text-sm sm:min-w-[3.25rem] ${shirtSize === size
                     ? 'border-[#cfae3f] bg-[#fff6d6] text-slate-900'
                     : 'border-slate-300 bg-white text-slate-700 hover:text-slate-900'
-                }`}
+                  }`}
               >
                 {size}
               </button>
@@ -363,6 +692,33 @@ export function RegistrationForm() {
           </div>
           {fieldErrors.shirtSize && <p className="text-xs text-rose-500">{fieldErrors.shirtSize}</p>}
         </div>
+
+        {/* ── Fee Summary ────────────────────────────────────────────────── */}
+        {selectedEventTypeSlugs.length > 0 && (
+          <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
+            <p className="font-semibold text-slate-800">Registration Summary</p>
+            <div className="mt-2 space-y-1 text-slate-600">
+              <p>Event: <span className="font-medium text-slate-900">{selectedEvent?.title ?? '—'}</span></p>
+              <p>
+                Types:{' '}
+                <span className="font-medium text-slate-900">
+                  {selectedEventTypeSlugs
+                    .map((slug) => eventTypes.find((t) => t.slug === slug)?.name ?? formatSlug(slug))
+                    .join(', ')}
+                </span>
+              </p>
+              <p>
+                Total Fee:{' '}
+                <span className="font-semibold text-slate-900">₱{totalFee.toLocaleString()}</span>
+                {selectedEventTypeSlugs.length > 1 && (
+                  <span className="ml-1 text-xs text-slate-400">
+                    ({selectedEventTypeSlugs.length} × ₱{registrationFee.toLocaleString()})
+                  </span>
+                )}
+              </p>
+            </div>
+          </div>
+        )}
 
         {error && <p className="text-sm text-rose-600">{error}</p>}
 
@@ -373,13 +729,15 @@ export function RegistrationForm() {
             disabled={submitting}
             className="inline-flex w-full items-center justify-center rounded-md bg-[#cfae3f] px-5 py-2.5 text-sm font-semibold text-black transition hover:bg-[#dab852] disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
           >
-            {submitting ? 'Saving…' : 'Next'}
+            {submitting ? 'Saving…' : 'Proceed to Payment'}
           </button>
         </div>
       </div>
     </section>
   )
 }
+
+// ─── Field Components ─────────────────────────────────────────────────────────
 
 function Field({
   label,
@@ -404,9 +762,8 @@ function Field({
         type={type}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
-        className={`w-full rounded-md border bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-[#cfae3f] sm:py-2 ${
-          error ? 'border-rose-400' : 'border-slate-300'
-        }`}
+        className={`w-full rounded-md border bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-[#cfae3f] sm:py-2 ${error ? 'border-rose-400' : 'border-slate-300'
+          }`}
       />
       {error && <p className="text-xs text-rose-500">{error}</p>}
     </div>
@@ -434,9 +791,8 @@ function SelectField({
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className={`w-full rounded-md border bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-[#cfae3f] sm:py-2 ${
-          error ? 'border-rose-400' : 'border-slate-300'
-        }`}
+        className={`w-full rounded-md border bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-[#cfae3f] sm:py-2 ${error ? 'border-rose-400' : 'border-slate-300'
+          }`}
       >
         {placeholder && (
           <option value="" disabled>

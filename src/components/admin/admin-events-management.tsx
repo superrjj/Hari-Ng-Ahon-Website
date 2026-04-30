@@ -85,6 +85,41 @@ function toDateTimeLocalValue(value: unknown) {
   return `${date.toISOString().slice(0, 10)}T${date.toISOString().slice(11, 16)}`
 }
 
+/** Venue is saved as "Place, City" when city is set — split for editing. */
+function parseVenueCity(storedVenue: string): { venue: string; city: string } {
+  const v = String(storedVenue ?? '').trim()
+  const idx = v.lastIndexOf(', ')
+  if (idx <= 0) return { venue: v, city: '' }
+  return { venue: v.slice(0, idx).trim(), city: v.slice(idx + 2).trim() }
+}
+
+/** Multiple event types are stored as comma-separated slugs in `race_type`. */
+function parseRaceTypeSlugs(row: Record<string, unknown> | null | undefined): string[] {
+  if (!row) return []
+  const multi = row.race_types
+  if (Array.isArray(multi)) return multi.map(String).map((s) => s.trim()).filter(Boolean)
+  const raw = String(row.race_type ?? '').trim()
+  if (!raw) return []
+  return raw.split(',').map((s) => s.trim()).filter(Boolean)
+}
+
+function parsePrizePoolFields(prizePool: unknown): { totalPrize: string; prizeDesc: string } {
+  const ppStr = typeof prizePool === 'string' ? prizePool.trim() : ''
+  if (!ppStr) return { totalPrize: '', prizeDesc: '' }
+  if (ppStr.startsWith('Total:')) {
+    const rest = ppStr.replace(/^Total:\s*/i, '')
+    const pipe = rest.indexOf('|')
+    if (pipe >= 0) {
+      return {
+        totalPrize: rest.slice(0, pipe).trim(),
+        prizeDesc: rest.slice(pipe + 1).trim(),
+      }
+    }
+    return { totalPrize: rest, prizeDesc: '' }
+  }
+  return { totalPrize: '', prizeDesc: ppStr }
+}
+
 // ─── Step indicator ──────────────────────────────────────────────────────────
 const STEPS = ['Event Information', 'Disciplines & Categories', 'Additional Information', 'Review & Publish']
 
@@ -312,9 +347,8 @@ function Step1({
                               else set.delete(t.slug)
                               const next = Array.from(set)
 
-                              // Save ONE value for backend compatibility.
-                              // If user unchecked the currently saved one, keep the first remaining.
-                              const nextRaceType = next.length ? next[next.length - 1] : ''
+                              // `race_type` stores comma-separated slugs; primary slug is first for legacy lookups.
+                              const nextRaceType = next.length ? next[0] : ''
                               return { ...v, race_types: next, race_type: nextRaceType }
                             })
                           }}
@@ -437,6 +471,8 @@ const BIKE_DISCIPLINE_ICONS: Record<string, string> = {
   Mixed: '🎽',
 }
 
+const CATEGORY_PREVIEW_LIMIT = 3
+
 function Step2({
   disciplines,
   setDisciplines,
@@ -446,6 +482,8 @@ function Step2({
   setDisciplines: React.Dispatch<React.SetStateAction<Discipline[]>>
   disciplinesLoading?: boolean
 }) {
+  const [categoriesExpandedByDiscipline, setCategoriesExpandedByDiscipline] = useState<Record<string, boolean>>({})
+
   const addDiscipline = () => {
     setDisciplines((prev) => [...prev, { id: crypto.randomUUID(), name: '', categories: [] }])
   }
@@ -572,7 +610,10 @@ function Step2({
               </div>
             ) : (
               <div className="space-y-3">
-                {disc.categories.map((cat) => (
+                {(categoriesExpandedByDiscipline[disc.id]
+                  ? disc.categories
+                  : disc.categories.slice(0, CATEGORY_PREVIEW_LIMIT)
+                ).map((cat) => (
                   <div key={cat.id} className="rounded-lg border border-slate-200 bg-white p-3">
                     <div className="grid grid-cols-3 gap-3">
                       <label>
@@ -631,6 +672,22 @@ function Step2({
                     </div>
                   </div>
                 ))}
+                {disc.categories.length > CATEGORY_PREVIEW_LIMIT ? (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setCategoriesExpandedByDiscipline((prev) => ({
+                        ...prev,
+                        [disc.id]: !prev[disc.id],
+                      }))
+                    }
+                    className="text-xs font-semibold text-blue-600 hover:text-blue-800 hover:underline"
+                  >
+                    {categoriesExpandedByDiscipline[disc.id]
+                      ? 'See less'
+                      : `See more (${disc.categories.length - CATEGORY_PREVIEW_LIMIT})`}
+                  </button>
+                ) : null}
               </div>
             )}
           </div>
@@ -752,12 +809,22 @@ function Step4({
   extra,
   posterFile,
   currentPosterUrl,
+  routeMapFile,
+  currentRouteMapUrl,
+  organizerLogoFile,
+  currentOrgLogoUrl,
+  eventTypes,
 }: {
   form: any
   disciplines: Discipline[]
   extra: any
   posterFile?: File | null
   currentPosterUrl?: string | null
+  routeMapFile?: File | null
+  currentRouteMapUrl?: string | null
+  organizerLogoFile?: File | null
+  currentOrgLogoUrl?: string | null
+  eventTypes: EventType[]
 }) {
   const riderLimitTotal = disciplines.reduce(
     (sum, d) => sum + d.categories.reduce((s, c) => s + Number(c.riderLimit || 0), 0),
@@ -778,6 +845,47 @@ function Step4({
 
   const displayPosterUrl = posterPreviewUrl ?? currentPosterUrl ?? null
 
+  const [routePreviewUrl, setRoutePreviewUrl] = useState<string | null>(null)
+  useEffect(() => {
+    if (!routeMapFile) {
+      setRoutePreviewUrl(null)
+      return
+    }
+    const url = URL.createObjectURL(routeMapFile)
+    setRoutePreviewUrl(url)
+    return () => URL.revokeObjectURL(url)
+  }, [routeMapFile])
+
+  const [orgLogoPreviewUrl, setOrgLogoPreviewUrl] = useState<string | null>(null)
+  useEffect(() => {
+    if (!organizerLogoFile) {
+      setOrgLogoPreviewUrl(null)
+      return
+    }
+    const url = URL.createObjectURL(organizerLogoFile)
+    setOrgLogoPreviewUrl(url)
+    return () => URL.revokeObjectURL(url)
+  }, [organizerLogoFile])
+
+  const displayRouteUrl = routePreviewUrl ?? currentRouteMapUrl ?? null
+  const displayOrgLogoUrl = orgLogoPreviewUrl ?? currentOrgLogoUrl ?? null
+
+  const raceTypeLabels = (() => {
+    const slugs: string[] = Array.isArray(form.race_types) && form.race_types.length > 0
+      ? (form.race_types as string[])
+      : form.race_type
+        ? String(form.race_type).split(',').map((s) => s.trim()).filter(Boolean)
+        : []
+    const nameFor = (slug: string) => eventTypes.find((t) => t.slug === slug)?.name ?? slug
+    return slugs.map(nameFor).join(', ') || '—'
+  })()
+
+  const [reviewCatExpandedByDiscipline, setReviewCatExpandedByDiscipline] = useState<Record<string, boolean>>({})
+  const [posterLoadFailed, setPosterLoadFailed] = useState(false)
+  useEffect(() => {
+    setPosterLoadFailed(false)
+  }, [displayPosterUrl])
+
   return (
     <div className="space-y-5">
       <div className="flex items-start justify-between">
@@ -791,29 +899,75 @@ function Step4({
       </div>
 
       <div className="rounded-xl border border-slate-200 bg-white p-4">
+        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-2">Event poster / banner</p>
         <div className="flex gap-4">
-          <div className="h-28 w-24 rounded-lg bg-slate-100 overflow-hidden flex-shrink-0">
-            {displayPosterUrl ? (
+          <div className="h-28 w-24 rounded-lg bg-slate-100 overflow-hidden flex-shrink-0 border border-slate-200">
+            {displayPosterUrl && !posterLoadFailed ? (
               <img
                 src={displayPosterUrl}
                 alt="Event poster"
                 className="h-full w-full object-cover"
-                onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
+                onError={() => setPosterLoadFailed(true)}
               />
             ) : (
-              <div className="h-full w-full flex items-center justify-center bg-slate-800">
-                <Image className="h-6 w-6 text-slate-500" />
+              <div className="h-full w-full flex flex-col items-center justify-center gap-1 bg-slate-100 px-1 text-center">
+                <Image className="h-6 w-6 text-slate-400" />
+                <span className="text-[9px] leading-tight text-slate-500">{displayPosterUrl ? 'Preview unavailable' : 'No image yet'}</span>
               </div>
             )}
           </div>
           <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-xs flex-1">
-            <div><p className="text-slate-500">Race Type</p><p className="font-medium text-slate-800">{form.race_type || '—'}</p></div>
-              <div><p className="text-slate-500">Date & Time</p><p className="font-medium text-slate-800">{form.event_date ? `${form.event_date} (${form.start_time || '—'})` : '—'}</p></div>
-            <div><p className="text-slate-500">Venue</p><p className="font-medium text-slate-800">{form.venue ? `${form.venue}, ${form.city}` : '—'}</p></div>
+            <div className="col-span-2 sm:col-span-1"><p className="text-slate-500">Event Types</p><p className="font-medium text-slate-800">{raceTypeLabels}</p></div>
+              <div><p className="text-slate-500">Date & Start — End</p><p className="font-medium text-slate-800">{form.event_date ? `${form.event_date} · ${form.start_time || '—'} — ${form.end_time || '—'}` : '—'}</p></div>
+            <div><p className="text-slate-500">Venue</p><p className="font-medium text-slate-800">{form.venue ? (form.city ? `${form.venue}, ${form.city}` : form.venue) : '—'}</p></div>
               <div><p className="text-slate-500">Registration Deadline</p><p className="font-medium text-slate-800">{form.registration_deadline || '—'}</p></div>
             <div><p className="text-slate-500">Registration Fee</p><p className="font-medium text-slate-800">PHP {Number(form.registration_fee || 0).toLocaleString()}</p></div>
             <div><p className="text-slate-500">Rider Limit</p><p className="font-medium text-slate-800">{riderLimitTotal.toLocaleString()} Riders (All Categories)</p></div>
+            <div className="col-span-2">
+              <p className="text-slate-500">Google Maps</p>
+              {form.google_maps_link ? (
+                <p className="font-medium text-blue-700 truncate"><a href={form.google_maps_link} target="_blank" rel="noreferrer">{form.google_maps_link}</a></p>
+              ) : (
+                <p className="font-medium text-slate-400">—</p>
+              )}
+            </div>
           </div>
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-slate-200 bg-white p-4">
+        <p className="text-sm font-semibold text-slate-800 mb-3">Route map & organizer logo</p>
+        <div className="flex flex-wrap gap-4">
+          {displayRouteUrl ? (
+            <div className="space-y-1">
+              <p className="text-[10px] font-medium uppercase tracking-wide text-slate-500">Route Map</p>
+              <div className="h-24 w-36 overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
+                <img src={displayRouteUrl} alt="Route map" className="h-full w-full object-cover" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none' }} />
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-1">
+              <p className="text-[10px] font-medium uppercase tracking-wide text-slate-500">Route Map</p>
+              <div className="flex h-24 w-36 items-center justify-center rounded-lg border border-dashed border-slate-200 bg-slate-50 text-[10px] text-slate-500 px-2 text-center">
+                None uploaded
+              </div>
+            </div>
+          )}
+          {displayOrgLogoUrl ? (
+            <div className="space-y-1">
+              <p className="text-[10px] font-medium uppercase tracking-wide text-slate-500">Organizer Logo</p>
+              <div className="h-24 w-36 overflow-hidden rounded-lg border border-slate-200 bg-slate-100 flex items-center justify-center">
+                <img src={displayOrgLogoUrl} alt="Organizer logo" className="max-h-full max-w-full object-contain p-1" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none' }} />
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-1">
+              <p className="text-[10px] font-medium uppercase tracking-wide text-slate-500">Organizer Logo</p>
+              <div className="flex h-24 w-36 items-center justify-center rounded-lg border border-dashed border-slate-200 bg-slate-50 text-[10px] text-slate-500 px-2 text-center">
+                None uploaded
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -835,12 +989,30 @@ function Step4({
                   {d.categories.length === 0 ? (
                     <p className="text-xs text-slate-500">No categories.</p>
                   ) : (
-                    d.categories.map((c) => (
-                      <div key={c.id} className="flex items-center justify-between gap-3 text-xs text-slate-700">
-                        <span>{c.name || '—'}</span>
-                        <span className="text-slate-500">Limit: {Number(c.riderLimit || 0).toLocaleString()}</span>
-                      </div>
-                    ))
+                    <>
+                      {(reviewCatExpandedByDiscipline[d.id] ? d.categories : d.categories.slice(0, CATEGORY_PREVIEW_LIMIT)).map((c) => (
+                        <div key={c.id} className="flex items-center justify-between gap-3 text-xs text-slate-700">
+                          <span>{c.name || '—'}</span>
+                          <span className="text-slate-500">Limit: {Number(c.riderLimit || 0).toLocaleString()}</span>
+                        </div>
+                      ))}
+                      {d.categories.length > CATEGORY_PREVIEW_LIMIT ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setReviewCatExpandedByDiscipline((prev) => ({
+                              ...prev,
+                              [d.id]: !prev[d.id],
+                            }))
+                          }
+                          className="text-xs font-semibold text-blue-600 hover:text-blue-800 hover:underline"
+                        >
+                          {reviewCatExpandedByDiscipline[d.id]
+                            ? 'See less'
+                            : `See more (${d.categories.length - CATEGORY_PREVIEW_LIMIT})`}
+                        </button>
+                      ) : null}
+                    </>
                   )}
                 </div>
               </div>
@@ -893,19 +1065,21 @@ function CreateEventModal({
 }) {
   const [step, setStep] = useState<Step>(1)
   const [saving, setSaving] = useState(false)
+  const initialVenueParts = parseVenueCity(String(initialEvent?.venue ?? ''))
+  const initialSlugs = parseRaceTypeSlugs(initialEvent as Record<string, unknown> | undefined)
+  const initialPrizeFields = parsePrizePoolFields(initialEvent?.prize_pool)
   const [form, setForm] = useState({
     title: String(initialEvent?.title ?? ''),
     description: String(initialEvent?.description ?? ''),
-    race_type: String(initialEvent?.race_type ?? 'itt'),
-    // UI-only: allow checking multiple event types at once.
-    // Backend still saves ONE value into `events.race_type`.
-    race_types: initialEvent?.race_type ? [String(initialEvent.race_type)] : ([] as string[]),
-    venue: String(initialEvent?.venue ?? ''),
-    city: '',
+    race_type: initialSlugs[0] ?? 'itt',
+    // Multiple types are stored as comma-separated slugs in `events.race_type`.
+    race_types: initialSlugs.length ? initialSlugs : ([] as string[]),
+    venue: initialVenueParts.venue,
+    city: initialVenueParts.city,
     event_date: toDateInputValue(initialEvent?.event_date),
     start_time: toTimeInputValue(initialEvent?.start_time),
-    end_time: '',
-    google_maps_link: '',
+    end_time: toTimeInputValue(initialEvent?.end_time),
+    google_maps_link: String(initialEvent?.google_maps_link ?? ''),
     registration_deadline: toDateTimeLocalValue(
       initialEvent?.registration_deadline ?? initialEvent?.registration_closes_at,
     ),
@@ -959,7 +1133,11 @@ function CreateEventModal({
       if (error) throw error
 
       await loadEventTypes()
-      setForm((v: any) => ({ ...v, race_type: slug }))
+      setForm((v: any) => {
+        const prev = Array.isArray(v.race_types) ? v.race_types : []
+        const next = [...new Set([...prev, slug])]
+        return { ...v, race_types: next, race_type: next[0] ?? slug }
+      })
       toast.success('Event type added.')
     } catch (e) {
       toast.error((e as Error).message || 'Failed to add event type.')
@@ -972,14 +1150,20 @@ function CreateEventModal({
   const [posterFile, setPosterFile] = useState<File | null>(null)
   const [routeMapFile, setRouteMapFile] = useState<File | null>(null)
   const [organizerLogoFile, setOrganizerLogoFile] = useState<File | null>(null)
+  const [persistedMedia, setPersistedMedia] = useState(() => ({
+    poster_url: (initialEvent?.poster_url as string | undefined) ?? null,
+    route_map_url: (initialEvent?.route_map_url as string | undefined) ?? null,
+    banner_url: (initialEvent?.banner_url as string | undefined) ?? null,
+    slug: (initialEvent?.slug as string | undefined) ?? null,
+  }))
   const [extra, setExtra] = useState({
     prizePool: initialEvent?.prize_pool ? 'has' : 'none',
-    totalPrize: '',
-    prizeDesc: String(initialEvent?.prize_pool ?? ''),
+    totalPrize: initialPrizeFields.totalPrize,
+    prizeDesc: initialPrizeFields.prizeDesc,
     orgName: String(initialEvent?.organizer_name ?? ''),
     orgEmail: String(initialEvent?.organizer_email ?? ''),
     orgPhone: String(initialEvent?.organizer_contact ?? ''),
-    orgWebsite: '',
+    orgWebsite: String(initialEvent?.organizer_website ?? ''),
     bibInstructions: String(initialEvent?.bib_claim_instructions ?? ''),
   })
 
@@ -1038,11 +1222,72 @@ function CreateEventModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, initialEvent?.id])
 
+  useEffect(() => {
+    setPersistedMedia({
+      poster_url: (initialEvent?.poster_url as string | undefined) ?? null,
+      route_map_url: (initialEvent?.route_map_url as string | undefined) ?? null,
+      banner_url: (initialEvent?.banner_url as string | undefined) ?? null,
+      slug: (initialEvent?.slug as string | undefined) ?? null,
+    })
+  }, [initialEvent?.id])
+
+  useEffect(() => {
+    if (mode !== 'edit' || !initialEvent?.id) return
+    let cancelled = false
+    ;(async () => {
+      const { data, error } = await supabase.from('events').select('*').eq('id', String(initialEvent.id)).maybeSingle()
+      if (cancelled || error || !data) return
+      const row = data as Record<string, unknown>
+      const slugs = parseRaceTypeSlugs(row)
+      const venueParts = parseVenueCity(String(row.venue ?? ''))
+      const pp = parsePrizePoolFields(row.prize_pool)
+      setPersistedMedia({
+        poster_url: row.poster_url ? String(row.poster_url) : null,
+        route_map_url: row.route_map_url ? String(row.route_map_url) : null,
+        banner_url: row.banner_url ? String(row.banner_url) : null,
+        slug: row.slug ? String(row.slug) : null,
+      })
+      setForm({
+        title: String(row.title ?? ''),
+        description: String(row.description ?? ''),
+        race_type: slugs[0] ?? 'itt',
+        race_types: slugs.length ? slugs : [],
+        venue: venueParts.venue,
+        city: venueParts.city,
+        event_date: toDateInputValue(row.event_date),
+        start_time: toTimeInputValue(row.start_time),
+        end_time: toTimeInputValue(row.end_time),
+        google_maps_link: String(row.google_maps_link ?? ''),
+        registration_deadline: toDateTimeLocalValue(row.registration_deadline ?? row.registration_closes_at),
+        registration_fee: String(row.registration_fee ?? '0'),
+      })
+      setExtra({
+        prizePool: row.prize_pool ? 'has' : 'none',
+        totalPrize: pp.totalPrize,
+        prizeDesc: pp.prizeDesc,
+        orgName: String(row.organizer_name ?? ''),
+        orgEmail: String(row.organizer_email ?? ''),
+        orgPhone: String(row.organizer_contact ?? ''),
+        orgWebsite: String(row.organizer_website ?? ''),
+        bibInstructions: String(row.bib_claim_instructions ?? ''),
+      })
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [mode, initialEvent?.id])
+
   const handleNext = async () => {
     if (isLastStep) {
       setSaving(true)
       try {
-        if (!form.title.trim() || !form.description.trim() || !form.race_type || !form.venue.trim() || !form.event_date) {
+        const selectedTypeSlugs =
+          Array.isArray(form.race_types) && form.race_types.length > 0
+            ? form.race_types
+            : form.race_type
+              ? [String(form.race_type)]
+              : []
+        if (!form.title.trim() || !form.description.trim() || selectedTypeSlugs.length === 0 || !form.venue.trim() || !form.event_date) {
           toast.error('Please complete required event fields before publishing.')
           return
         }
@@ -1058,21 +1303,31 @@ function CreateEventModal({
           return
         }
 
-        const posterUrl = await uploadToBucket('event-posters', posterFile)
-        const routeMapUrl = await uploadToBucket('event-route-maps', routeMapFile)
-        const organizerLogoUrl = await uploadToBucket('organizer-logos', organizerLogoFile)
+        const uploadedPoster = await uploadToBucket('event-posters', posterFile)
+        const uploadedRoute = await uploadToBucket('event-route-maps', routeMapFile)
+        const uploadedOrgLogo = await uploadToBucket('organizer-logos', organizerLogoFile)
+        const posterUrl = uploadedPoster ?? (mode === 'edit' ? persistedMedia.poster_url : null)
+        const routeMapUrl = uploadedRoute ?? (mode === 'edit' ? persistedMedia.route_map_url : null)
+        const organizerLogoStoredUrl = uploadedOrgLogo ?? (mode === 'edit' ? persistedMedia.banner_url : null)
+
         const baseSlug = slugify(form.title) || 'event'
         const eventIdForSave = mode === 'edit' ? String(initialEvent?.id) : crypto.randomUUID()
-        const slugValue = `${baseSlug}-${Date.now()}`
+        const slugValue =
+          mode === 'edit' && persistedMedia.slug ? persistedMedia.slug : `${baseSlug}-${Date.now()}`
         const riderLimit = disciplines.reduce(
           (sum, d) => sum + d.categories.reduce((s, c) => s + Number(c.riderLimit || 0), 0),
           0,
         )
 
+        const endTimestamp =
+          form.end_time?.trim() ? combineDateAndTime(form.event_date, form.end_time) : null
+        const mapsLink = form.google_maps_link.trim()
+        const orgWebsite = extra.orgWebsite.trim()
+
         const payload = {
           title: form.title.trim(),
           description: form.description.trim(),
-          race_type: form.race_type,
+          race_type: selectedTypeSlugs.join(','),
           venue: form.city ? `${form.venue.trim()}, ${form.city.trim()}` : form.venue.trim(),
           route_map_url: routeMapUrl,
           event_date: eventTimestamp,
@@ -1085,14 +1340,17 @@ function CreateEventModal({
           poster_url: posterUrl,
           slug: slugValue,
           short_description: form.description.trim().slice(0, 160),
-          banner_url: organizerLogoUrl,
+          banner_url: organizerLogoStoredUrl,
           registration_closes_at: deadlineTimestamp,
           rider_limit: riderLimit > 0 ? riderLimit : null,
           organizer_name: extra.orgName || null,
           organizer_contact: extra.orgPhone || null,
           organizer_email: extra.orgEmail || null,
+          organizer_website: orgWebsite || null,
           bib_claim_instructions: extra.bibInstructions || null,
           start_time: eventTimestamp,
+          end_time: endTimestamp,
+          google_maps_link: mapsLink || null,
           status: mode === 'edit' ? String(initialEvent?.status ?? 'draft') : 'draft',
           updated_at: new Date().toISOString(),
         }
@@ -1165,8 +1423,8 @@ function CreateEventModal({
               setPosterFile={setPosterFile}
               routeMapFile={routeMapFile}
               setRouteMapFile={setRouteMapFile}
-              currentPosterUrl={initialEvent?.poster_url ?? null}
-              currentRouteMapUrl={initialEvent?.route_map_url ?? null}
+              currentPosterUrl={persistedMedia.poster_url ?? initialEvent?.poster_url ?? null}
+              currentRouteMapUrl={persistedMedia.route_map_url ?? initialEvent?.route_map_url ?? null}
               eventTypes={eventTypes}
               eventTypesLoading={eventTypesLoading}
               onAddEventType={handleAddEventType}
@@ -1185,7 +1443,7 @@ function CreateEventModal({
               setExtra={setExtra}
               organizerLogoFile={organizerLogoFile}
               setOrganizerLogoFile={setOrganizerLogoFile}
-              currentOrgLogoUrl={initialEvent?.banner_url ?? null}
+              currentOrgLogoUrl={persistedMedia.banner_url ?? initialEvent?.banner_url ?? null}
             />
           )}
           {step === 4 && (
@@ -1194,7 +1452,12 @@ function CreateEventModal({
               disciplines={disciplines}
               extra={extra}
               posterFile={posterFile}
-              currentPosterUrl={initialEvent?.poster_url ?? null}
+              currentPosterUrl={persistedMedia.poster_url ?? initialEvent?.poster_url ?? null}
+              routeMapFile={routeMapFile}
+              currentRouteMapUrl={persistedMedia.route_map_url ?? initialEvent?.route_map_url ?? null}
+              organizerLogoFile={organizerLogoFile}
+              currentOrgLogoUrl={persistedMedia.banner_url ?? initialEvent?.banner_url ?? null}
+              eventTypes={eventTypes}
             />
           )}
         </div>
@@ -1273,7 +1536,6 @@ function EventCard({
         <div className="xl:pr-3">
           <p className="text-xs text-slate-500">Registration Deadline</p>
           <p className="text-xs font-medium text-red-500">{formatDate(event.registration_deadline ?? event.event_date)}</p>
-          <p className="text-[10px] text-slate-400">(11:59 PM)</p>
           <div className="mt-2">
             <p className="text-xs text-slate-500">Registrations</p>
             <p className="text-xs font-bold text-blue-600">{registrations} / {riderLimit}</p>
@@ -1387,8 +1649,11 @@ export function AdminEventsManagement() {
         organizer_name: event.organizer_name ?? null,
         organizer_contact: event.organizer_contact ?? null,
         organizer_email: event.organizer_email ?? null,
+        organizer_website: event.organizer_website ?? null,
         bib_claim_instructions: event.bib_claim_instructions ?? null,
         start_time: event.start_time ?? null,
+        end_time: event.end_time ?? null,
+        google_maps_link: event.google_maps_link ?? null,
         status: 'draft',
         published_at: null,
       })
@@ -1565,6 +1830,7 @@ export function AdminEventsManagement() {
       {isCreateOpen && <CreateEventModal onClose={() => setIsCreateOpen(false)} onSave={handleSave} />}
       {editingEvent && (
         <CreateEventModal
+          key={String(editingEvent.id)}
           mode="edit"
           initialEvent={editingEvent}
           onClose={() => setEditingEvent(null)}

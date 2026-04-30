@@ -2,30 +2,107 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { api } from '../../services/api'
+import { supabase } from '../../lib/supabase'
 import { registrationService } from '../../services/registrationService'
 import type { Event } from '../../types'
 
-const roadBikeCategories = [
-  'RB OPEN/ELITE',
-  'YOUTH (15 and Below)',
-  'Junior (16-18)',
-  'Under 23 (19-22)',
-  'Masters A (23-34)',
-  'Masters B (35-44)',
-  'Masters C (45-54)',
-  'Masters D (55 and above)',
-]
+// ─── Types ────────────────────────────────────────────────────────────────────
 
-const mountainBikeCategories = [
-  'MTB OPEN/Elite',
-  'YOUTH (15 and Below)',
-  'Junior (16-18)',
-  'Under 23 (19-22)',
-  'Masters A (23-34)',
-  'Masters B (35-44)',
-  'Masters C (45-54)',
-  'Masters D (55 and above)',
-]
+interface RaceCategory {
+  id: string
+  discipline: string
+  category_name: string
+  code: string
+  rider_limit: number | null
+  active: boolean
+}
+
+interface DisciplineGroup {
+  discipline: string
+  categories: RaceCategory[]
+}
+
+const CATEGORY_PREVIEW_LIMIT = 5
+
+const DISCIPLINE_ICONS: Record<string, string> = {
+  'Road Bike': '🚴',
+  'Mountain Bike': '🚵',
+  MTB: '🚵',
+  Gravel: '🪨',
+  'Gravel Bike': '🪨',
+  'E-Bike': '⚡',
+  'E-Bike (Open)': '⚡',
+  Mixed: '🎽',
+}
+
+const DISCIPLINE_TIRE_HINTS: Record<string, string> = {
+  'Road Bike': 'Tire Size: <32mm / <1.25"',
+  'Mountain Bike': 'Tire Size: >50mm / 1.95"',
+  'Gravel Bike': 'Tire Size: 33–49mm / 1.3–1.9"',
+}
+
+// ─── Skeleton ─────────────────────────────────────────────────────────────────
+
+function CategorySkeleton() {
+  return (
+    <div className="animate-pulse rounded-lg border border-slate-200 bg-white p-4 shadow-[0_12px_30px_-12px_rgba(15,23,42,0.28),0_6px_14px_-8px_rgba(15,23,42,0.2)] sm:p-5">
+      <div className="h-4 w-32 rounded bg-slate-200 mb-2" />
+      <div className="h-3 w-40 rounded bg-slate-100 mb-4" />
+      <div className="space-y-2">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <div key={i} className="h-3 w-3/4 rounded bg-slate-100" />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ─── Discipline Card ──────────────────────────────────────────────────────────
+
+function DisciplineCard({ group }: { group: DisciplineGroup }) {
+  const [expanded, setExpanded] = useState(false)
+  const icon = DISCIPLINE_ICONS[group.discipline] ?? '🚴'
+  const tireHint = DISCIPLINE_TIRE_HINTS[group.discipline] ?? null
+  const activeCategories = group.categories.filter((c) => c.active)
+  const visible = expanded ? activeCategories : activeCategories.slice(0, CATEGORY_PREVIEW_LIMIT)
+  const hasMore = activeCategories.length > CATEGORY_PREVIEW_LIMIT
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-[0_12px_30px_-12px_rgba(15,23,42,0.28),0_6px_14px_-8px_rgba(15,23,42,0.2)] sm:p-5">
+      <div className="flex items-center gap-2 mb-1">
+        <span className="text-base" aria-hidden="true">{icon}</span>
+        <h4 className="text-sm font-semibold">{group.discipline}</h4>
+      </div>
+      {tireHint && (
+        <p className="mt-0.5 text-xs text-slate-500">{tireHint}</p>
+      )}
+      {activeCategories.length === 0 ? (
+        <p className="mt-3 text-xs text-slate-400 italic">No active categories.</p>
+      ) : (
+        <>
+          <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-slate-700 marker:text-slate-500">
+            {visible.map((cat) => (
+              <li key={cat.id}>{cat.category_name}</li>
+            ))}
+          </ul>
+          {hasMore && (
+            <button
+              type="button"
+              onClick={() => setExpanded((v) => !v)}
+              className="mt-2 text-xs font-semibold text-[#1e4a8e] hover:underline"
+            >
+              {expanded
+                ? 'See less'
+                : `See ${activeCategories.length - CATEGORY_PREVIEW_LIMIT} more…`}
+            </button>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────────
 
 export function RegistrationInfo() {
   const { session } = useAuth()
@@ -34,6 +111,12 @@ export function RegistrationInfo() {
   const [error, setError] = useState<string | null>(null)
   const [pendingRegistrationId, setPendingRegistrationId] = useState<string | null>(null)
 
+  // disciplines fetched from race_categories
+  const [disciplineGroups, setDisciplineGroups] = useState<DisciplineGroup[]>([])
+  const [categoriesLoading, setCategoriesLoading] = useState(false)
+  const [categoriesError, setCategoriesError] = useState<string | null>(null)
+
+  // ── Fetch upcoming events ──────────────────────────────────────────────────
   useEffect(() => {
     let active = true
     setLoading(true)
@@ -51,11 +134,10 @@ export function RegistrationInfo() {
         if (!active) return
         setLoading(false)
       })
-    return () => {
-      active = false
-    }
+    return () => { active = false }
   }, [])
 
+  // ── Fetch pending draft ────────────────────────────────────────────────────
   useEffect(() => {
     if (!session) {
       setPendingRegistrationId(null)
@@ -72,13 +154,65 @@ export function RegistrationInfo() {
         if (!active) return
         setPendingRegistrationId(null)
       })
-    return () => {
-      active = false
-    }
+    return () => { active = false }
   }, [session])
 
   const selectedEvent = useMemo(() => events[0] ?? null, [events])
-  const eventDate = selectedEvent?.event_date ? new Date(selectedEvent.event_date).toLocaleDateString() : 'TBA'
+
+  // ── Fetch race_categories for the selected event ───────────────────────────
+  useEffect(() => {
+    if (!selectedEvent?.id) {
+      setDisciplineGroups([])
+      return
+    }
+    let active = true
+    setCategoriesLoading(true)
+    setCategoriesError(null)
+
+    ;(async () => {
+      try {
+        const { data, error: err } = await supabase
+          .from('race_categories')
+          .select('id, discipline, category_name, code, rider_limit, active')
+          .eq('event_id', selectedEvent.id)
+
+        if (!active) return
+        if (err) {
+          setCategoriesError(err.message || 'Failed to load categories.')
+          setDisciplineGroups([])
+          return
+        }
+        const rows = (data ?? []) as RaceCategory[]
+
+        // group by discipline, preserving insertion order
+        const groupMap = new Map<string, RaceCategory[]>()
+        for (const row of rows) {
+          const disc = (row.discipline ?? '').trim() || 'General'
+          if (!groupMap.has(disc)) groupMap.set(disc, [])
+          groupMap.get(disc)!.push(row)
+        }
+
+        const groups: DisciplineGroup[] = Array.from(groupMap.entries()).map(
+          ([discipline, categories]) => ({ discipline, categories }),
+        )
+        setDisciplineGroups(groups)
+      } catch (e) {
+        if (!active) return
+        setCategoriesError((e as Error).message || 'Failed to load categories.')
+        setDisciplineGroups([])
+      } finally {
+        if (!active) return
+        setCategoriesLoading(false)
+      }
+    })()
+
+    return () => { active = false }
+  }, [selectedEvent?.id])
+
+  // ── Derived values ─────────────────────────────────────────────────────────
+  const eventDate = selectedEvent?.event_date
+    ? new Date(selectedEvent.event_date).toLocaleDateString()
+    : 'TBA'
   const eventRace = selectedEvent?.race_type ?? 'Race'
   const registrationFee = Number(selectedEvent?.registration_fee ?? 0)
   const nextPath = pendingRegistrationId
@@ -111,6 +245,7 @@ export function RegistrationInfo() {
           </dl>
         </header>
 
+        {/* Description */}
         <section className="space-y-3">
           <h2 className="text-lg font-semibold">Bike Challenge Series</h2>
           <p className="text-sm leading-relaxed text-slate-700">
@@ -131,6 +266,7 @@ export function RegistrationInfo() {
           </p>
         </section>
 
+        {/* Registration fees */}
         <section className="space-y-4 rounded-lg border border-slate-200 bg-white p-4 shadow-[0_12px_30px_-12px_rgba(15,23,42,0.28),0_6px_14px_-8px_rgba(15,23,42,0.2)] sm:p-5">
           <h3 className="text-lg font-semibold">Registration fees</h3>
           <p className="text-sm text-slate-600">
@@ -139,7 +275,13 @@ export function RegistrationInfo() {
           </p>
           <div className="flex flex-wrap items-center gap-3">
             <span className="rounded-md bg-[#cfae3f] px-3 py-1 text-sm font-semibold text-black">Tier 1</span>
-            <span className="text-sm text-slate-800">₱{registrationFee.toLocaleString()} </span>
+            <span className="text-sm text-slate-800">
+              {registrationFee > 0
+                ? `₱${registrationFee.toLocaleString()} per event type`
+                : loading
+                  ? '—'
+                  : 'Contact organizer for pricing'}
+            </span>
             <span className="text-xs text-slate-500">Current</span>
           </div>
           <p className="text-xs text-slate-500">
@@ -147,48 +289,38 @@ export function RegistrationInfo() {
           </p>
         </section>
 
-        <section className="space-y-6">
+        {/* Dynamic Categories */}
+        <section className="space-y-4">
           <h3 className="text-lg font-semibold">Categories</h3>
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-[0_12px_30px_-12px_rgba(15,23,42,0.28),0_6px_14px_-8px_rgba(15,23,42,0.2)] sm:p-5">
-              <h4 className="text-sm font-semibold">Road Bike</h4>
-              <p className="mt-1 text-xs text-slate-500">Tire Size: &lt;32mm / &lt;1.25&quot;</p>
-              <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-slate-700 marker:text-slate-500">
-              {roadBikeCategories.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-              </ul>
-            </div>
-            <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-[0_12px_30px_-12px_rgba(15,23,42,0.28),0_6px_14px_-8px_rgba(15,23,42,0.2)] sm:p-5">
-              <h4 className="text-sm font-semibold">Mountain Bike</h4>
-              <p className="mt-1 text-xs text-slate-500">Tire Size: &gt;50mm / 1.95&quot;</p>
-              <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-slate-700 marker:text-slate-500">
-              {mountainBikeCategories.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-              </ul>
-            </div>
-          </div>
 
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-[0_12px_30px_-12px_rgba(15,23,42,0.28),0_6px_14px_-8px_rgba(15,23,42,0.2)] sm:p-5">
-              <h4 className="text-sm font-semibold">Gravel Bike</h4>
-              <p className="mt-1 text-xs text-slate-500">Tire Size: 33–49mm / 1.3–1.9&quot;</p>
-              <ul className="mt-3 list-disc pl-5 text-sm text-slate-700 marker:text-slate-500">
-                <li>Open Gravel Bike</li>
-              </ul>
+          {categoriesLoading && (
+            <div className="grid gap-4 md:grid-cols-2">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <CategorySkeleton key={i} />
+              ))}
             </div>
-            <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-[0_12px_30px_-12px_rgba(15,23,42,0.28),0_6px_14px_-8px_rgba(15,23,42,0.2)] sm:p-5">
-              <h4 className="text-sm font-semibold">Mixed</h4>
-              <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-slate-700 marker:text-slate-500">
-                <li>Open / Elite Women</li>
-                <li>Heavyweight</li>
-                <li>Public Servant</li>
-              </ul>
+          )}
+
+          {!categoriesLoading && categoriesError && (
+            <p className="text-sm text-rose-600">{categoriesError}</p>
+          )}
+
+          {!categoriesLoading && !categoriesError && disciplineGroups.length === 0 && selectedEvent && (
+            <p className="text-sm text-slate-500 italic">
+              No categories have been configured for this event yet.
+            </p>
+          )}
+
+          {!categoriesLoading && disciplineGroups.length > 0 && (
+            <div className="grid gap-4 md:grid-cols-2">
+              {disciplineGroups.map((group) => (
+                <DisciplineCard key={group.discipline} group={group} />
+              ))}
             </div>
-          </div>
+          )}
         </section>
 
+        {/* CTA */}
         <div className="pt-2">
           {loading ? <p className="text-sm text-slate-500">Loading available events...</p> : null}
           {error ? <p className="text-sm text-rose-600">{error}</p> : null}

@@ -437,8 +437,10 @@ export function RegistrationPayment() {
     try {
       await registrationService.cancelPendingPaymentDraft(pendingDraft.registrationId)
       setPendingDraft(null)
+      // Redirect rider back to registration info so they can start fresh
+      void navigate('/register/info', { replace: true })
     } catch (e) {
-      setError((e as Error).message || 'Failed to cancel pending draft.')
+      setError((e as Error).message || 'Failed to discard registration.')
     } finally {
       setCancellingDraft(false)
     }
@@ -486,7 +488,7 @@ export function RegistrationPayment() {
                   disabled={cancellingDraft}
                   className="inline-flex items-center rounded-md border border-amber-300 bg-white px-5 py-2.5 text-sm font-semibold text-amber-900 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {cancellingDraft ? 'Cancelling…' : 'Cancel Draft'}
+                  {cancellingDraft ? 'Discarding…' : 'Discard Registration'}
                 </button>
               </div>
             </div>

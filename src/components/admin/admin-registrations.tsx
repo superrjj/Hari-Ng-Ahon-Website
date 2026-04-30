@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { adminApi, type AdminRegistrationRow } from '../../services/adminApi'
-import { CalendarDays, CheckCircle2, Printer, Search, ShieldX, UserRoundX, Users } from 'lucide-react'
+import { supabase } from '../../lib/supabase'
+import { CalendarDays, CheckCircle2, Printer, Search, ShieldX, Users } from 'lucide-react'
 
 function pill(status: string) {
   const s = status.toLowerCase()
@@ -10,6 +11,29 @@ function pill(status: string) {
   if (s === 'failed') return 'bg-rose-50 text-rose-700'
   if (s === 'refunded') return 'bg-slate-100 text-slate-700'
   return 'bg-slate-100 text-slate-700'
+}
+
+function SkeletonRow() {
+  return (
+    <tr className="animate-pulse">
+      <td className="py-3 pl-4 pr-3">
+        <div className="h-3 w-32 rounded bg-slate-200 mb-1.5" />
+        <div className="h-2.5 w-44 rounded bg-slate-100" />
+      </td>
+      <td className="py-3 pr-3"><div className="h-3 w-36 rounded bg-slate-200" /></td>
+      <td className="py-3 pr-3"><div className="h-3 w-20 rounded bg-slate-200" /></td>
+      <td className="py-3 pr-3"><div className="h-3 w-20 rounded bg-slate-200" /></td>
+      <td className="py-3 pr-3"><div className="h-3 w-24 rounded bg-slate-200" /></td>
+      <td className="py-3 pr-3">
+        <div className="h-3 w-20 rounded bg-slate-200 mb-1.5" />
+        <div className="h-2.5 w-16 rounded bg-slate-100" />
+      </td>
+      <td className="py-3 pr-3"><div className="h-5 w-16 rounded-full bg-slate-200" /></td>
+      <td className="py-3 pr-3"><div className="h-3 w-24 rounded bg-slate-200" /></td>
+      <td className="py-3 pr-3"><div className="h-3 w-10 rounded bg-slate-200" /></td>
+      <td className="py-3 pr-4 text-right"><div className="ml-auto h-6 w-12 rounded-md bg-slate-200" /></td>
+    </tr>
+  )
 }
 
 export function AdminRegistrations() {
@@ -24,25 +48,40 @@ export function AdminRegistrations() {
   const [sortBy, setSortBy] = useState<'created_desc' | 'created_asc' | 'cyclist_asc' | 'cyclist_desc'>('created_desc')
   const [page, setPage] = useState(1)
 
-  useEffect(() => {
-    let active = true
-    setLoading(true)
-    void adminApi
+  function fetchData() {
+    return adminApi
       .registrationsList()
       .then((data) => {
-        if (!active) return
         setRows(data)
+        setError('')
       })
       .catch((e) => {
-        if (!active) return
         setError((e as Error).message || 'Failed to load registrations.')
       })
       .finally(() => {
-        if (!active) return
         setLoading(false)
       })
+  }
+
+  useEffect(() => {
+    setLoading(true)
+    void fetchData()
+
+    const channel = supabase
+      .channel('admin-registrations-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'registration_forms' }, () => {
+        void fetchData()
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'payment_orders' }, () => {
+        void fetchData()
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'payment_transactions' }, () => {
+        void fetchData()
+      })
+      .subscribe()
+
     return () => {
-      active = false
+      void supabase.removeChannel(channel)
     }
   }, [])
 
@@ -198,16 +237,14 @@ export function AdminRegistrations() {
           </div>
         </div>
 
-        <div className="grid gap-3 border-b border-slate-100 px-4 py-3 md:grid-cols-2 xl:grid-cols-5">
-          <StatCard label="Paid" value={paidCount} icon={<CheckCircle2 className="h-4 w-4" />} tone="emerald" />
-          <StatCard label="Pending" value={pendingCount} icon={<CalendarDays className="h-4 w-4" />} tone="amber" />
-          <StatCard label="Approved" value={approvedCount} icon={<CheckCircle2 className="h-4 w-4" />} tone="blue" />
-          <StatCard label="Rejected" value={rejectedCount} icon={<UserRoundX className="h-4 w-4" />} tone="rose" />
-          <StatCard label="Total Registrations" value={filtered.length} icon={<Users className="h-4 w-4" />} tone="violet" />
+        <div className="grid gap-3 border-b border-slate-100 px-4 py-3 md:grid-cols-2 xl:grid-cols-3">
+          <StatCard label="Paid" value={paidCount} icon={<CheckCircle2 className="h-4 w-4" />} tone="emerald" loading={loading} />
+          <StatCard label="Pending" value={pendingCount} icon={<CalendarDays className="h-4 w-4" />} tone="amber" loading={loading} />
+          <StatCard label="Total Registrations" value={filtered.length} icon={<Users className="h-4 w-4" />} tone="violet" loading={loading} />
         </div>
 
-        {loading ? <p className="px-4 py-3 text-sm text-slate-500">Loading…</p> : null}
         {error ? <p className="px-4 py-3 text-sm text-rose-600">{error}</p> : null}
+
         <div className="overflow-x-auto">
           <table className="min-w-[1320px] w-full text-left text-sm">
             <thead className="bg-slate-50 text-[10px] uppercase tracking-[0.08em] text-slate-500">
@@ -221,64 +258,63 @@ export function AdminRegistrations() {
                 <th className="py-3 pr-3 font-semibold">Payment Status</th>
                 <th className="py-3 pr-3 font-semibold">Reference No.</th>
                 <th className="py-3 pr-3 font-semibold">Bib Number</th>
-                <th className="py-3 pr-3 font-semibold">Registration Status</th>
                 <th className="py-3 pr-4 text-right font-semibold">Admin Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {paginated.map((r) => {
-                const payment = String(r.payment_status ?? 'unknown')
-                const registrationStatus = String(r.status ?? 'pending')
-                const isPaid = payment.toLowerCase() === 'paid'
-                const referenceNo = (r.provider_reference ?? '').trim()
-                return (
-                  <tr key={r.id} className="text-slate-800 transition-colors hover:bg-slate-50/70">
-                    <td className="py-3 pl-4 pr-3">
-                      <p className="text-xs font-semibold">{r.rider_full_name ?? '-'}</p>
-                      <p className="text-[11px] text-slate-500">{r.registrant_email ?? '-'}</p>
-                    </td>
-                    <td className="py-3 pr-3 text-xs">{r.event_title ?? r.race_type ?? '-'}</td>
-                    <td className="py-3 pr-3 text-xs">{r.age_category ?? '-'}</td>
-                    <td className="py-3 pr-3 text-xs">{r.discipline ?? '-'}</td>
-                    <td className="py-3 pr-3 text-xs">{r.discipline ?? '-'}</td>
-                    <td className="py-3 pr-3 text-xs text-slate-600">
-                      {r.created_at ? new Date(r.created_at).toLocaleDateString() : '-'}
-                      <p className="text-[10px] text-slate-400">{r.created_at ? new Date(r.created_at).toLocaleTimeString() : ''}</p>
-                    </td>
-                    <td className="py-3 pr-3">
-                      <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase ${pill(payment)}`}>
-                        <span className="h-1.5 w-1.5 rounded-full bg-current opacity-70" />
-                        {payment}
-                      </span>
-                    </td>
-                    <td className="py-3 pr-3 text-xs">
-                      {isPaid ? <span className="font-semibold text-emerald-700">{referenceNo || '-'}</span> : <span className="text-slate-400">-</span>}
-                    </td>
-                    <td className="py-3 pr-3 text-xs font-semibold text-slate-700">—</td>
-                    <td className="py-3 pr-3">
-                      <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase ${pill(registrationStatus)}`}>
-                        <span className="h-1.5 w-1.5 rounded-full bg-current opacity-70" />
-                        {registrationStatus}
-                      </span>
-                    </td>
-                    <td className="py-3 pr-4 text-right">
-                      <Link
-                        to={`/admin/registrations/${encodeURIComponent(r.id)}`}
-                        className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
-                      >
-                        View
-                      </Link>
-                    </td>
-                  </tr>
-                )
-              })}
-              {paginated.length === 0 && !loading ? (
+              {loading ? (
+                Array.from({ length: 8 }).map((_, i) => <SkeletonRow key={i} />)
+              ) : paginated.length === 0 ? (
                 <tr>
-                  <td className="py-6 text-center text-sm font-medium text-slate-500" colSpan={11}>
-                    No registrations found.
+                  <td className="py-12 text-center" colSpan={10}>
+                    <div className="flex flex-col items-center gap-2 text-slate-400">
+                      <Users className="h-8 w-8 opacity-40" />
+                      <p className="text-sm font-medium">No registrations found.</p>
+                      <p className="text-xs">Try adjusting your filters or search query.</p>
+                    </div>
                   </td>
                 </tr>
-              ) : null}
+              ) : (
+                paginated.map((r) => {
+                  const payment = String(r.payment_status ?? 'unknown')
+                  const isPaid = payment.toLowerCase() === 'paid'
+                  const referenceNo = (r.provider_reference ?? '').trim()
+                  return (
+                    <tr key={r.id} className="text-slate-800 transition-colors hover:bg-slate-50/70">
+                      <td className="py-3 pl-4 pr-3">
+                        <p className="text-xs font-semibold">{r.rider_full_name ?? '-'}</p>
+                        <p className="text-[11px] text-slate-500">{r.registrant_email ?? '-'}</p>
+                      </td>
+                      <td className="py-3 pr-3 text-xs">{r.event_title ?? r.race_type ?? '-'}</td>
+                      <td className="py-3 pr-3 text-xs">{r.age_category ?? '-'}</td>
+                      <td className="py-3 pr-3 text-xs">{r.discipline ?? '-'}</td>
+                      <td className="py-3 pr-3 text-xs">{r.team_name ?? '-'}</td>
+                      <td className="py-3 pr-3 text-xs text-slate-600">
+                        {r.created_at ? new Date(r.created_at).toLocaleDateString() : '-'}
+                        <p className="text-[10px] text-slate-400">{r.created_at ? new Date(r.created_at).toLocaleTimeString() : ''}</p>
+                      </td>
+                      <td className="py-3 pr-3">
+                        <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase ${pill(payment)}`}>
+                          <span className="h-1.5 w-1.5 rounded-full bg-current opacity-70" />
+                          {payment}
+                        </span>
+                      </td>
+                      <td className="py-3 pr-3 text-xs">
+                        {isPaid ? <span className="font-semibold text-emerald-700">{referenceNo || '-'}</span> : <span className="text-slate-400">-</span>}
+                      </td>
+                      <td className="py-3 pr-3 text-xs font-semibold text-slate-700">—</td>
+                      <td className="py-3 pr-4 text-right">
+                        <Link
+                          to={`/admin/registrations/${encodeURIComponent(r.id)}`}
+                          className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                        >
+                          View
+                        </Link>
+                      </td>
+                    </tr>
+                  )
+                })
+              )}
             </tbody>
           </table>
         </div>
@@ -329,11 +365,13 @@ function StatCard({
   value,
   icon,
   tone,
+  loading,
 }: {
   label: string
   value: number
   icon: React.ReactNode
   tone: 'emerald' | 'amber' | 'blue' | 'rose' | 'violet'
+  loading?: boolean
 }) {
   const iconClass =
     tone === 'emerald'
@@ -350,11 +388,14 @@ function StatCard({
       <div className="flex items-start justify-between">
         <div>
           <p className="text-[11px] text-slate-500">{label}</p>
-          <p className="text-2xl font-semibold text-slate-900">{value}</p>
+          {loading ? (
+            <div className="mt-1 h-7 w-10 animate-pulse rounded bg-slate-200" />
+          ) : (
+            <p className="text-2xl font-semibold text-slate-900">{value}</p>
+          )}
         </div>
         <span className={`rounded-md p-2 ${iconClass}`}>{icon}</span>
       </div>
     </div>
   )
 }
-

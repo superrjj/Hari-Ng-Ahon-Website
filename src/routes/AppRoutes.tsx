@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes } from 'react-router-dom'
+import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import { AuthPage } from '../components/auth/auth-page'
 import { AdminDashboard } from '../components/admin/admin-dashboard'
@@ -52,8 +52,9 @@ function HomeRoute() {
   )
 }
 
-function RequireAuth({ children, redirectTo }: { children: ReactNode; redirectTo: string }) {
+function RequireAuth({ children }: { children: ReactNode }) {
   const { session, loading } = useAuth()
+  const location = useLocation()
   if (loading) {
     return (
       <Shell>
@@ -63,7 +64,9 @@ function RequireAuth({ children, redirectTo }: { children: ReactNode; redirectTo
   }
 
   if (!session) {
-    return <Navigate to={`/auth?redirect=${encodeURIComponent(redirectTo)}`} replace />
+    // Preserve the full URL (path + query params) so PayMongo redirects survive login
+    const fullPath = location.pathname + location.search
+    return <Navigate to={`/auth?redirect=${encodeURIComponent(fullPath)}`} replace />
   }
 
   return children
@@ -96,6 +99,83 @@ function RequireAdmin({ children }: { children: ReactNode }) {
   return children
 }
 
+export function NotFound() {
+  const navigate = useNavigate()
+
+  return (
+    <section
+      className="relative flex min-h-[calc(100vh-4rem)] flex-col items-center justify-center overflow-hidden px-6 py-20 text-center"
+      style={{ fontFamily: "'Sora', sans-serif" }}
+    >
+      {/* Background watermark */}
+      <span
+        className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 select-none text-[clamp(120px,20vw,180px)] font-bold leading-none tracking-tighter text-slate-900/[0.05]"
+        style={{ fontFamily: "'Space Mono', monospace" }}
+        aria-hidden
+      >
+        404
+      </span>
+
+      {/* Decorative circles */}
+      <div className="pointer-events-none absolute -right-24 -top-20 h-[420px] w-[420px] rounded-full bg-slate-900 opacity-[0.04]" />
+      <div className="pointer-events-none absolute -bottom-16 -left-16 h-64 w-64 rounded-full bg-slate-900 opacity-[0.04]" />
+
+      {/* Content */}
+      <div className="relative z-10 flex max-w-md flex-col items-center">
+        {/* Badge */}
+        <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-1.5">
+          <span className="h-2 w-2 rounded-full bg-red-500" />
+          <span
+            className="text-[11px] tracking-widest text-slate-500"
+            style={{ fontFamily: "'Space Mono', monospace" }}
+          >
+            Error 404
+          </span>
+        </div>
+
+        <p
+          className="mb-3 text-[11px] uppercase tracking-[3px] text-slate-400"
+          style={{ fontFamily: "'Space Mono', monospace" }}
+        >
+          Page not found
+        </p>
+
+        <h1 className="mb-4 text-4xl font-semibold leading-tight tracking-tight text-slate-900">
+          This route doesn't exist
+        </h1>
+
+        <div className="mb-6 h-px w-10 bg-slate-200" />
+
+        <p className="mb-8 text-[15px] font-light leading-relaxed text-slate-500">
+          The page you're looking for may have been moved, renamed, or doesn't exist.
+          Check the URL or head back to safety.
+        </p>
+
+        <div className="flex flex-wrap items-center justify-center gap-3">
+          <a
+            href="/"
+            className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-6 py-3 text-sm font-semibold text-white transition hover:-translate-y-px hover:opacity-85"
+          >
+            <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M8 1L1 8h2.5v6h4v-4h1v4h4V8H15L8 1z" />
+            </svg>
+            Go to homepage
+          </a>
+          <button
+            onClick={() => navigate(-1)}
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-5 py-3 text-sm text-slate-700 transition hover:-translate-y-px hover:bg-slate-50"
+          >
+            <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <path d="M10 12L6 8l4-4" />
+            </svg>
+            Go back
+          </button>
+        </div>
+      </div>
+    </section>
+  )
+}
+
 export function AppRoutes() {
   return (
     <Routes>
@@ -124,7 +204,7 @@ export function AppRoutes() {
         path="/register/form"
         element={
           <PublicOnly>
-            <RequireAuth redirectTo="/register/form"><Shell><RegistrationForm /></Shell></RequireAuth>
+           <RequireAuth><Shell><RegistrationForm /></Shell></RequireAuth>
           </PublicOnly>
         }
       />
@@ -132,7 +212,7 @@ export function AppRoutes() {
         path="/register/payment"
         element={
           <PublicOnly>
-            <RequireAuth redirectTo="/register/payment"><Shell><RegistrationPayment /></Shell></RequireAuth>
+            <RequireAuth><Shell><RegistrationPayment /></Shell></RequireAuth>
           </PublicOnly>
         }
       />
@@ -140,7 +220,7 @@ export function AppRoutes() {
         path="/register/payment-success"
         element={
           <PublicOnly>
-            <RequireAuth redirectTo="/register/payment-success"><Shell><RegistrationPaymentSuccess /></Shell></RequireAuth>
+            <RequireAuth><Shell><RegistrationPaymentSuccess /></Shell></RequireAuth>
           </PublicOnly>
         }
       />
@@ -350,7 +430,7 @@ export function AppRoutes() {
         }
       />
 
-      <Route path="*" element={<Navigate to="/" replace />} />
+      <Route path="*" element={<Shell><NotFound /></Shell>} />
     </Routes>
   )
 }

@@ -9,6 +9,7 @@ export interface AdminRegistrationRow {
   discipline?: string | null
   age_category?: string | null
   event_title?: string | null
+  team_name?: string | null
   rider_full_name?: string | null
   registrant_email?: string | null
   status?: string | null
@@ -79,7 +80,7 @@ export const adminApi = {
     )
 
     const { data: events, error: eventsError } = eventIds.length
-      ? await supabase.from('event_step1').select('id, race_type, title').in('id', eventIds)
+      ? await supabase.from('events').select('id, race_type, title').in('id', eventIds)
       : { data: [], error: null }
 
     if (eventsError) throw eventsError
@@ -91,17 +92,18 @@ export const adminApi = {
     // 1.5) Rider full names for table display
     const { data: riderDetails, error: riderDetailsError } = await supabase
       .from('registration_rider_details')
-      .select('registration_id, first_name, last_name, discipline, age_category')
+      .select('registration_id, first_name, last_name, discipline, age_category, team_name') // ✅ added team_name
       .in('registration_id', registrationIds)
 
     if (riderDetailsError) throw riderDetailsError
-    const riderByReg = new Map<string, { first_name?: string | null; last_name?: string | null; discipline?: string | null; age_category?: string | null }>()
+    const riderByReg = new Map<string, { first_name?: string | null; last_name?: string | null; discipline?: string | null; age_category?: string | null; team_name?: string | null }>()
     for (const rider of riderDetails ?? []) {
       riderByReg.set(rider.registration_id, {
         first_name: rider.first_name ?? null,
         last_name: rider.last_name ?? null,
         discipline: rider.discipline ?? null,
         age_category: rider.age_category ?? null,
+        team_name: rider.team_name ?? null, // ✅ added team_name
       })
     }
 
@@ -150,6 +152,7 @@ export const adminApi = {
         discipline: rider?.discipline ?? null,
         age_category: rider?.age_category ?? null,
         event_title: ev?.title ?? null,
+        team_name: rider?.team_name ?? null, // ✅ added team_name
         rider_full_name: riderFullName || null,
         registrant_email: f.registrant_email ?? null,
         status: f.status ?? null,
@@ -209,7 +212,7 @@ export const adminApi = {
 
     const evId = reg?.event_id ? String(reg.event_id) : null
     const { data: ev, error: evError } = evId
-      ? await supabase.from('event_step1').select('id, race_type, title').eq('id', evId).maybeSingle()
+      ? await supabase.from('events').select('id, race_type, title').eq('id', evId).maybeSingle()
       : { data: null, error: null }
 
     if (evError) throw evError
@@ -238,4 +241,3 @@ export const adminApi = {
     }
   },
 }
-
