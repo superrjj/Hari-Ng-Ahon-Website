@@ -38,7 +38,6 @@ export function AdminQrCheckIn() {
   const controlsRef = useRef<ScannerControls | null>(null)
   const scanLockRef = useRef(false)
   const lastScanRef = useRef<string>('')
-  const [isScannerOn, setIsScannerOn] = useState(false)
   const [processing, setProcessing] = useState(false)
   const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment')
   const [cameraError, setCameraError] = useState<string | null>(null)
@@ -49,7 +48,6 @@ export function AdminQrCheckIn() {
     controlsRef.current?.stop()
     controlsRef.current = null
     readerRef.current = null
-    setIsScannerOn(false)
     setTorchOn(false)
   }, [])
 
@@ -166,7 +164,6 @@ export function AdminQrCheckIn() {
       )) as ScannerControls
 
       controlsRef.current = controls
-      setIsScannerOn(true)
     } catch (scannerError) {
       const message = (scannerError as Error).message || 'Unable to open camera.'
       setCameraError(message)
@@ -193,11 +190,6 @@ export function AdminQrCheckIn() {
     void startCamera()
     return () => stopCamera()
   }, [startCamera, stopCamera])
-
-  useEffect(() => {
-    if (!isScannerOn) return
-    void startCamera()
-  }, [facingMode, isScannerOn, startCamera])
 
   const recentScans = useMemo(() => {
     return (data?.scans ?? []).slice(0, 5)
