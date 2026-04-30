@@ -214,9 +214,6 @@ export function RegistrationPaymentSuccess() {
             <li>Your QR race certificate is generated from your rider information.</li>
             <li>You can preview and download your QR certificate.</li>
           </ol>
-          <p className="mt-4 text-xs text-slate-500">
-            Registration ID: <span className="font-mono text-slate-700">{registrationId ?? 'N/A'}</span>
-          </p>
         </div>
 
         <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">

@@ -244,6 +244,9 @@ export const registrationService = {
     if (!regForBib) throw new Error('Registration record not found.')
 
     if (!String(regForBib.bib_number ?? '').trim()) {
+      if (!regForBib.race_category_id) {
+        throw new Error('Missing race category for this registration.')
+      }
       const { data: raceCategory, error: raceCategoryError } = await supabase
         .from('race_categories')
         .select('code, category_name, rider_limit')
@@ -357,7 +360,9 @@ export const registrationService = {
           .order('created_at', { ascending: false })
           .limit(1)
           .maybeSingle(),
-        supabase.from('race_categories').select('category_name, code').eq('id', registration.race_category_id).maybeSingle(),
+        registration.race_category_id
+          ? supabase.from('race_categories').select('category_name, code').eq('id', registration.race_category_id).maybeSingle()
+          : Promise.resolve({ data: null, error: null }),
       ])
 
     if (riderError) throw riderError
@@ -398,7 +403,7 @@ export const registrationService = {
       bibNumber,
       eventTitle: String(event?.title ?? 'Hari ng Ahon'),
       registrantEmail: String(registration.registrant_email ?? ''),
-      qrValue: `BIB:${bibNumber}|EVENT:${eventType}`,
+      qrValue: bibNumber,
       paymentStatus,
       isPaid,
       paidAt: txPaidAt ?? order?.paid_at ?? null,

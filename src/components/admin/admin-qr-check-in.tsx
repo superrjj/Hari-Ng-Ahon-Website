@@ -16,7 +16,6 @@ type ScanResult = {
   status: 'valid' | 'invalid' | 'duplicate'
   message: string
   code: string
-  qrFields: Array<{ label: string; value: string }>
   riderName?: string
   category?: string
   bibNumber?: string
@@ -34,27 +33,6 @@ function extractBibFromCode(code: string) {
   const match = trimmed.match(/BIB:([^|]+)/i)
   if (match?.[1]) return match[1].trim()
   return trimmed
-}
-
-function parseQrFields(code: string): Array<{ label: string; value: string }> {
-  const chunks = code
-    .split('|')
-    .map((part) => part.trim())
-    .filter(Boolean)
-  const fields = chunks
-    .map((chunk) => {
-      const [rawKey, ...rawValue] = chunk.split(':')
-      if (!rawKey || rawValue.length === 0) return null
-      const key = rawKey.trim()
-      const value = rawValue.join(':').trim()
-      if (!key || !value) return null
-      return {
-        label: key.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase()),
-        value,
-      }
-    })
-    .filter(Boolean) as Array<{ label: string; value: string }>
-  return fields.length > 0 ? fields : [{ label: 'Code', value: code }]
 }
 
 function labelForStatus(status: ScanResult['status']) {
@@ -102,7 +80,6 @@ export function AdminQrCheckIn() {
           status: 'duplicate',
           message: 'This code has already been checked in.',
           code,
-          qrFields: parseQrFields(code),
           scannedAt: new Date().toISOString(),
         })
         setClaimDialogOpen(false)
@@ -129,7 +106,6 @@ export function AdminQrCheckIn() {
           status: 'invalid',
           message: 'No rider matched this QR code.',
           code,
-          qrFields: parseQrFields(code),
           scannedAt: new Date().toISOString(),
         })
         setClaimDialogOpen(false)
@@ -153,7 +129,6 @@ export function AdminQrCheckIn() {
         status: 'valid',
         message: 'Ready to claim race kit.',
         code: lookupCode,
-        qrFields: parseQrFields(code),
         riderName,
         category: rider?.age_category ?? 'Uncategorized',
         bibNumber,
@@ -269,12 +244,22 @@ export function AdminQrCheckIn() {
               <p className="text-sm text-emerald-900">Ready to claim race kit.</p>
             </div>
             <div className="space-y-2 px-5 py-4">
-              {scanResult.qrFields.map((field) => (
-                <div key={`${field.label}-${field.value}`} className="flex items-center justify-between gap-3 text-sm">
-                  <p className="text-slate-500">{field.label}</p>
-                  <p className="font-semibold text-slate-900">{field.value}</p>
-                </div>
-              ))}
+              <div className="flex items-center justify-between gap-3 text-sm">
+                <p className="text-slate-500">Name</p>
+                <p className="font-semibold text-slate-900">{scanResult.riderName ?? '—'}</p>
+              </div>
+              <div className="flex items-center justify-between gap-3 text-sm">
+                <p className="text-slate-500">Category</p>
+                <p className="font-semibold text-slate-900">{scanResult.category ?? '—'}</p>
+              </div>
+              <div className="flex items-center justify-between gap-3 text-sm">
+                <p className="text-slate-500">Bib Number</p>
+                <p className="font-semibold text-slate-900">{scanResult.bibNumber ?? scanResult.code}</p>
+              </div>
+              <div className="flex items-center justify-between gap-3 text-sm">
+                <p className="text-slate-500">Event</p>
+                <p className="font-semibold text-slate-900">{scanResult.eventTitle ?? '—'}</p>
+              </div>
             </div>
             <div className="flex gap-3 border-t border-slate-200 px-5 py-4">
               <button
@@ -393,10 +378,6 @@ export function AdminQrCheckIn() {
                 <div className="flex justify-between gap-3">
                   <dt className="text-slate-500">Event</dt>
                   <dd className="font-medium text-slate-800">{scanResult.eventTitle ?? '—'}</dd>
-                </div>
-                <div className="flex justify-between gap-3">
-                  <dt className="text-slate-500">Registration ID</dt>
-                  <dd className="font-medium text-slate-800">{scanResult.registrationId ?? '—'}</dd>
                 </div>
               </dl>
             </div>
