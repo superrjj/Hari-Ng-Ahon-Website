@@ -15,7 +15,6 @@ import {
   AdminGalleryModule,
   AdminOnlinePayments,
   AdminQrCheckIn,
-  AdminRaceBibGenerator,
   AdminReportsModule,
   AdminResultsManagement,
   AdminRiderDashboardInfo,
@@ -286,12 +285,12 @@ export function AppRoutes() {
         }
       />
       <Route
-        path="/admin/bibs"
+        path="/admin/qr-code-race-kit"
         element={
           <RequireAdmin>
             <AdminShell>
-              <AdminLayout title="Auto Race Bib Generator" subtitle="Generate and export race bibs with QR codes.">
-                <AdminRaceBibGenerator />
+              <AdminLayout title="QR Code Race Kit" subtitle="Scan and validate rider QR codes for race kit claiming.">
+                <AdminQrCheckIn />
               </AdminLayout>
             </AdminShell>
           </RequireAdmin>
