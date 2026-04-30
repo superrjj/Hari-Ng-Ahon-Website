@@ -1,10 +1,11 @@
 import { BrowserMultiFormatReader } from '@zxing/browser'
 import { BarcodeFormat, DecodeHintType, NotFoundException } from '@zxing/library'
+import { RefreshCw, Zap } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { supabase } from '../../lib/supabase'
 import { adminModulesApi } from '../../services/adminModulesApi'
-import { DataTable, ModuleShell, SectionCard, StatGrid, formatDate, useModuleLoader } from './admin-module-shared'
+import { DataTable, ModuleShell, SectionCard, formatDate, useModuleLoader } from './admin-module-shared'
 
 type ScannerControls = {
   stop: () => void
@@ -195,74 +196,63 @@ export function AdminQrCheckIn() {
     return (data?.scans ?? []).slice(0, 5)
   }, [data?.scans])
 
-  const invalidOrDuplicate = useMemo(() => {
-    return (data?.scans ?? []).filter((row) => {
-      const status = String(row.scan_status ?? '').toLowerCase()
-      return status === 'invalid' || status === 'duplicate'
-    }).length
-  }, [data?.scans])
-
   return (
     <ModuleShell loading={loading} error={error}>
-      <StatGrid
-        items={[
-          { label: 'Scanned today', value: data?.stats.scans ?? 0 },
-          { label: 'Valid check-ins', value: data?.stats.valid ?? 0 },
-          { label: 'Invalid / duplicate', value: invalidOrDuplicate },
-        ]}
-      />
-
-      <div className="grid gap-6 xl:grid-cols-[1.6fr_1fr]">
-        <SectionCard title="QR Scanner" subtitle="Point the camera at the rider QR code to validate check-in.">
-          <div className="space-y-4">
-            <div className="overflow-hidden rounded-2xl border border-slate-700 bg-slate-950 shadow-lg">
-              <div className="flex items-center justify-between px-3 py-3 text-xs text-slate-200">
-                <button
-                  type="button"
-                  onClick={() => void toggleTorch()}
-                  className="rounded-full bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-100 hover:bg-slate-700"
-                >
-                  {torchOn ? 'Flash Off' : 'Flash On'}
-                </button>
-                <p className="text-center text-sm font-medium text-slate-100">Scan rider QR to claim race kit</p>
-                <button
-                  type="button"
-                  onClick={() => setFacingMode((mode) => (mode === 'environment' ? 'user' : 'environment'))}
-                  className="rounded-full bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-100 hover:bg-slate-700"
-                >
-                  Switch Camera
-                </button>
-              </div>
-
-              <div className="relative h-[380px] w-full bg-slate-900 md:h-[460px]">
-                <video ref={videoRef} muted playsInline className="h-full w-full object-cover" />
-                <div className="pointer-events-none absolute inset-0">
-                  <div className="absolute left-10 top-10 h-10 w-10 border-l-4 border-t-4 border-white/95" />
-                  <div className="absolute right-10 top-10 h-10 w-10 border-r-4 border-t-4 border-white/95" />
-                  <div className="absolute bottom-10 left-10 h-10 w-10 border-b-4 border-l-4 border-white/95" />
-                  <div className="absolute bottom-10 right-10 h-10 w-10 border-b-4 border-r-4 border-white/95" />
-                  <div className="absolute bottom-6 left-1/2 -translate-x-1/2 rounded-full bg-slate-900/80 px-4 py-2 text-xs text-slate-200">
-                    Align QR code within the frame to scan
-                  </div>
-                </div>
-
-                {cameraError ? (
-                  <div className="absolute inset-0 flex items-center justify-center bg-slate-950/80 px-5 text-center text-sm text-rose-200">
-                    {cameraError}
-                  </div>
-                ) : null}
-                {processing ? (
-                  <div className="absolute right-4 top-4 rounded-full bg-emerald-500/90 px-3 py-1 text-xs font-medium text-white">
-                    Processing...
-                  </div>
-                ) : null}
-              </div>
+      <SectionCard title="QR Scanner" subtitle="Point the camera at the rider QR code to validate check-in.">
+        <div className="space-y-4">
+          <div className="overflow-hidden rounded-2xl border border-slate-700 bg-slate-950 shadow-lg">
+            <div className="flex items-center justify-between px-3 py-3 text-xs text-slate-200">
+              <button
+                type="button"
+                onClick={() => void toggleTorch()}
+                aria-label={torchOn ? 'Turn flash off' : 'Turn flash on'}
+                title={torchOn ? 'Flash Off' : 'Flash On'}
+                className="rounded-full bg-slate-800 p-2 text-slate-100 hover:bg-slate-700"
+              >
+                <Zap className={`h-4 w-4 ${torchOn ? 'text-amber-300' : 'text-slate-200'}`} />
+              </button>
+              <p className="text-center text-sm font-medium text-slate-100">Scan rider QR to claim race kit</p>
+              <button
+                type="button"
+                onClick={() => setFacingMode((mode) => (mode === 'environment' ? 'user' : 'environment'))}
+                aria-label="Switch camera"
+                title="Switch Camera"
+                className="rounded-full bg-slate-800 p-2 text-slate-100 hover:bg-slate-700"
+              >
+                <RefreshCw className="h-4 w-4 text-slate-200" />
+              </button>
             </div>
 
-            <p className="text-center text-sm text-slate-500">Ensure proper lighting and hold QR code steady for best results.</p>
-          </div>
-        </SectionCard>
+            <div className="relative h-[380px] w-full bg-slate-900 md:h-[460px]">
+              <video ref={videoRef} muted playsInline className="h-full w-full object-cover" />
+              <div className="pointer-events-none absolute inset-0">
+                <div className="absolute left-10 top-10 h-10 w-10 border-l-4 border-t-4 border-white/95" />
+                <div className="absolute right-10 top-10 h-10 w-10 border-r-4 border-t-4 border-white/95" />
+                <div className="absolute bottom-10 left-10 h-10 w-10 border-b-4 border-l-4 border-white/95" />
+                <div className="absolute bottom-10 right-10 h-10 w-10 border-b-4 border-r-4 border-white/95" />
+                <div className="absolute bottom-6 left-1/2 -translate-x-1/2 rounded-full bg-slate-900/80 px-4 py-2 text-xs text-slate-200">
+                  Align QR code within the frame to scan
+                </div>
+              </div>
 
+              {cameraError ? (
+                <div className="absolute inset-0 flex items-center justify-center bg-slate-950/80 px-5 text-center text-sm text-rose-200">
+                  {cameraError}
+                </div>
+              ) : null}
+              {processing ? (
+                <div className="absolute right-4 top-4 rounded-full bg-emerald-500/90 px-3 py-1 text-xs font-medium text-white">
+                  Processing...
+                </div>
+              ) : null}
+            </div>
+          </div>
+
+          <p className="text-center text-sm text-slate-500">Ensure proper lighting and hold QR code steady for best results.</p>
+        </div>
+      </SectionCard>
+
+      <div className="grid gap-6 xl:grid-cols-[1.6fr_1fr]">
         <SectionCard title="Scan Result" subtitle="Shows rider status after each scan.">
           {!scanResult ? (
             <p className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-sm text-slate-500">
@@ -308,23 +298,22 @@ export function AdminQrCheckIn() {
               </dl>
             </div>
           )}
+        </SectionCard>
 
-          <div className="mt-5">
-            <h3 className="text-sm font-semibold text-slate-700">Recent Scans</h3>
-            <div className="mt-2 space-y-2">
-              {recentScans.length === 0 ? (
-                <p className="text-sm text-slate-500">No recent scans yet.</p>
-              ) : (
-                recentScans.map((scan, index) => (
-                  <div key={String(scan.id ?? index)} className="rounded-lg border border-slate-200 px-3 py-2">
-                    <p className="text-sm font-medium text-slate-800">{String(scan.scanned_code ?? '—')}</p>
-                    <p className="text-xs text-slate-500">
-                      {String(scan.scan_status ?? 'unknown')} · {formatDate(scan.scanned_at)}
-                    </p>
-                  </div>
-                ))
-              )}
-            </div>
+        <SectionCard title="Recent Scans" subtitle="Latest scan activity from this venue.">
+          <div className="space-y-2">
+            {recentScans.length === 0 ? (
+              <p className="text-sm text-slate-500">No recent scans yet.</p>
+            ) : (
+              recentScans.map((scan, index) => (
+                <div key={String(scan.id ?? index)} className="rounded-lg border border-slate-200 px-3 py-2">
+                  <p className="text-sm font-medium text-slate-800">{String(scan.scanned_code ?? '—')}</p>
+                  <p className="text-xs text-slate-500">
+                    {String(scan.scan_status ?? 'unknown')} · {formatDate(scan.scanned_at)}
+                  </p>
+                </div>
+              ))
+            )}
           </div>
         </SectionCard>
       </div>
