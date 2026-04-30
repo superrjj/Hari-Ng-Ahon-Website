@@ -204,15 +204,6 @@ export function AdminQrCheckIn() {
 
   return (
     <ModuleShell loading={loading} error={error}>
-      <style>{`
-        @keyframes qr-scan-sweep {
-          0% { transform: translateY(-120px); opacity: 0.15; }
-          15% { opacity: 0.95; }
-          50% { opacity: 0.75; }
-          85% { opacity: 0.95; }
-          100% { transform: translateY(120px); opacity: 0.15; }
-        }
-      `}</style>
       <StatGrid
         items={[
           { label: 'Scanned today', value: data?.stats.scans ?? 0 },
@@ -221,7 +212,7 @@ export function AdminQrCheckIn() {
         ]}
       />
 
-      <div className="grid gap-6 xl:grid-cols-[1.6fr_1fr]">
+      <div className="grid gap-6 xl:grid-cols-[1.9fr_1fr]">
         <SectionCard title="QR Scanner" subtitle="Point the camera at the rider QR code to validate check-in.">
           <div className="space-y-4">
             <div className="overflow-hidden rounded-2xl border border-slate-700 bg-slate-950 shadow-lg">
@@ -243,15 +234,11 @@ export function AdminQrCheckIn() {
                 </button>
               </div>
 
-              <div className="relative aspect-[4/3] w-full bg-slate-900">
+              <div className="relative h-[520px] w-full bg-slate-900 md:h-[620px]">
                 <video ref={videoRef} muted playsInline className="h-full w-full object-cover" />
                 <div className="pointer-events-none absolute inset-0">
-                  <div className="absolute left-10 top-10 h-10 w-10 border-l-4 border-t-4 border-white/95 animate-pulse" />
-                  <div className="absolute right-10 top-10 h-10 w-10 border-r-4 border-t-4 border-white/95 animate-pulse" />
-                  <div className="absolute bottom-10 left-10 h-10 w-10 border-b-4 border-l-4 border-white/95 animate-pulse" />
-                  <div className="absolute bottom-10 right-10 h-10 w-10 border-b-4 border-r-4 border-white/95 animate-pulse" />
-                  <div className="absolute inset-x-8 top-1/2 h-0.5 -translate-y-1/2 bg-cyan-300/90 shadow-[0_0_18px_rgba(34,211,238,0.95)]" style={{ animation: 'qr-scan-sweep 2.2s ease-in-out infinite' }} />
-                  <div className="absolute bottom-8 left-1/2 -translate-x-1/2 rounded-full bg-slate-900/80 px-4 py-2 text-xs text-slate-200">
+                  <div className="absolute inset-x-6 top-1/2 h-0.5 -translate-y-1/2 bg-cyan-300/90 shadow-[0_0_14px_rgba(34,211,238,0.9)]" />
+                  <div className="absolute bottom-6 left-1/2 -translate-x-1/2 rounded-full bg-slate-900/80 px-4 py-2 text-xs text-slate-200">
                     Align QR code within the frame to scan
                   </div>
                 </div>
