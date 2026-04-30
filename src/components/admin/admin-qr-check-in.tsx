@@ -1,6 +1,6 @@
 import { BrowserMultiFormatReader } from '@zxing/browser'
 import { BarcodeFormat, DecodeHintType, NotFoundException } from '@zxing/library'
-import { RefreshCw, Zap } from 'lucide-react'
+import { Zap } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { supabase } from '../../lib/supabase'
@@ -32,12 +32,6 @@ function extractBibFromCode(code: string) {
   return trimmed
 }
 
-function labelForStatus(status: ScanResult['status']) {
-  if (status === 'valid') return 'Valid Rider'
-  if (status === 'duplicate') return 'Duplicate Scan'
-  return 'Invalid Code'
-}
-
 export function AdminQrCheckIn() {
   const [reloadKey, setReloadKey] = useState(0)
   const { data, loading, error } = useModuleLoader(() => adminModulesApi.qrDashboard(), [reloadKey])
@@ -48,12 +42,12 @@ export function AdminQrCheckIn() {
   const scanLockRef = useRef(false)
   const lastScanRef = useRef<string>('')
   const [processing, setProcessing] = useState(false)
-  const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment')
   const [cameraError, setCameraError] = useState<string | null>(null)
   const [torchOn, setTorchOn] = useState(false)
   const [scanResult, setScanResult] = useState<ScanResult | null>(null)
   const [claimDialogOpen, setClaimDialogOpen] = useState(false)
   const [claimingKit, setClaimingKit] = useState(false)
+  const [duplicateDialogOpen, setDuplicateDialogOpen] = useState(false)
 
   const stopCamera = useCallback(() => {
     controlsRef.current?.stop()
@@ -85,6 +79,26 @@ export function AdminQrCheckIn() {
           code,
           scannedAt: new Date().toISOString(),
         })
+        setClaimDialogOpen(false)
+        return
+      }
+
+      const { data: duplicateClaim, error: duplicateError } = await supabase
+        .from('qr_checkins')
+        .select('id')
+        .eq('registration_id', registration.id)
+        .eq('scan_status', 'valid')
+        .limit(1)
+        .maybeSingle()
+      if (duplicateError) throw duplicateError
+      if (duplicateClaim?.id) {
+        setScanResult({
+          status: 'duplicate',
+          message: 'This rider has already claimed the race kit.',
+          code: lookupCode,
+          scannedAt: new Date().toISOString(),
+        })
+        setDuplicateDialogOpen(true)
         setClaimDialogOpen(false)
         return
       }
@@ -141,7 +155,7 @@ export function AdminQrCheckIn() {
       const controls = (await reader.decodeFromConstraints(
         {
           video: {
-            facingMode: { ideal: facingMode },
+            facingMode: { ideal: 'environment' },
             width: { ideal: 1280 },
             height: { ideal: 720 },
           },
@@ -163,7 +177,7 @@ export function AdminQrCheckIn() {
       toast.error(message)
       stopCamera()
     }
-  }, [facingMode, processCode, stopCamera])
+  }, [processCode, stopCamera])
 
   const toggleTorch = useCallback(async () => {
     try {
@@ -300,6 +314,33 @@ export function AdminQrCheckIn() {
           </div>
         </div>
       ) : null}
+      {duplicateDialogOpen && scanResult?.status === 'duplicate' ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">
+          <div className="w-full max-w-md rounded-2xl border border-amber-200 bg-white shadow-2xl">
+            <div className="rounded-t-2xl border-b border-amber-200 bg-amber-50 px-5 py-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">Duplicate scan</p>
+              <p className="text-sm text-amber-900">{scanResult.message}</p>
+            </div>
+            <div className="px-5 py-4 text-sm text-slate-700">
+              <p>
+                Code: <span className="font-semibold text-slate-900">{scanResult.code}</span>
+              </p>
+            </div>
+            <div className="flex justify-end border-t border-slate-200 px-5 py-4">
+              <button
+                type="button"
+                onClick={() => {
+                  setDuplicateDialogOpen(false)
+                  setScanResult(null)
+                }}
+                className="inline-flex items-center justify-center rounded-md border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <SectionCard title="QR Scanner" subtitle="Point the camera at the rider QR code to validate check-in.">
         <div className="space-y-4">
@@ -315,15 +356,7 @@ export function AdminQrCheckIn() {
                 <Zap className={`h-4 w-4 ${torchOn ? 'text-amber-300' : 'text-slate-200'}`} />
               </button>
               <p className="text-center text-sm font-medium text-slate-100">Scan rider QR to claim race kit</p>
-              <button
-                type="button"
-                onClick={() => setFacingMode((mode) => (mode === 'environment' ? 'user' : 'environment'))}
-                aria-label="Switch camera"
-                title="Switch Camera"
-                className="rounded-full bg-slate-800 p-2 text-slate-100 hover:bg-slate-700"
-              >
-                <RefreshCw className="h-4 w-4 text-slate-200" />
-              </button>
+              <div className="h-8 w-8" />
             </div>
 
             <div className="relative h-[380px] w-full bg-slate-900 md:h-[460px]">
@@ -355,50 +388,7 @@ export function AdminQrCheckIn() {
         </div>
       </SectionCard>
 
-      <div className="grid gap-6 xl:grid-cols-[1.6fr_1fr]">
-        <SectionCard title="Scan Result" subtitle="Shows rider status after each scan.">
-          {!scanResult ? (
-            <p className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-sm text-slate-500">
-              Waiting for QR scan...
-            </p>
-          ) : (
-            <div
-              className={`rounded-xl border p-4 ${
-                scanResult.status === 'valid'
-                  ? 'border-emerald-200 bg-emerald-50'
-                  : scanResult.status === 'duplicate'
-                    ? 'border-amber-200 bg-amber-50'
-                    : 'border-rose-200 bg-rose-50'
-              }`}
-            >
-              <p className="text-base font-semibold text-slate-900">{labelForStatus(scanResult.status)}</p>
-              <p className="mt-1 text-sm text-slate-600">{scanResult.message}</p>
-              <dl className="mt-4 space-y-2 text-sm">
-                <div className="flex justify-between gap-3">
-                  <dt className="text-slate-500">Code</dt>
-                  <dd className="font-medium text-slate-800">{scanResult.code}</dd>
-                </div>
-                <div className="flex justify-between gap-3">
-                  <dt className="text-slate-500">Name</dt>
-                  <dd className="font-medium text-slate-800">{scanResult.riderName ?? '—'}</dd>
-                </div>
-                <div className="flex justify-between gap-3">
-                  <dt className="text-slate-500">Category</dt>
-                  <dd className="font-medium text-slate-800">{scanResult.category ?? '—'}</dd>
-                </div>
-                <div className="flex justify-between gap-3">
-                  <dt className="text-slate-500">Bib number</dt>
-                  <dd className="font-medium text-slate-800">{scanResult.bibNumber ?? '—'}</dd>
-                </div>
-                <div className="flex justify-between gap-3">
-                  <dt className="text-slate-500">Event</dt>
-                  <dd className="font-medium text-slate-800">{scanResult.eventTitle ?? '—'}</dd>
-                </div>
-              </dl>
-            </div>
-          )}
-        </SectionCard>
-
+      <div className="grid gap-6">
         <SectionCard title="Recent Scans" subtitle="Latest scan activity from this venue.">
           <div className="space-y-2">
             {recentScans.length === 0 ? (
@@ -417,13 +407,13 @@ export function AdminQrCheckIn() {
         </SectionCard>
       </div>
 
-      <SectionCard title="QR Scan History" subtitle="Venue scans, validation result, and operator device context.">
+      <SectionCard title="QR Scan History" subtitle="Venue scans, rider, validation result, and timestamp.">
         <DataTable
           rows={data?.scans ?? []}
           columns={[
             { key: 'scanned_code', label: 'Code' },
+            { key: 'rider_name', label: 'Rider' },
             { key: 'scan_status', label: 'Status' },
-            { key: 'device_label', label: 'Device' },
             { key: 'scanned_at', label: 'Scanned At', render: (row) => formatDate(row.scanned_at) },
           ]}
         />

@@ -164,14 +164,33 @@ export const adminModulesApi = {
     const [{ data: scans, error }, scanCount] = await Promise.all([
       supabase
         .from('qr_checkins')
-        .select('id, registration_id, scanned_code, scan_status, scanned_at, device_label')
+        .select('id, registration_id, scanned_code, scan_status, scanned_at')
         .order('scanned_at', { ascending: false })
         .limit(15),
       countRows('qr_checkins'),
     ])
     if (error) throw error
+    const registrationIds = Array.from(new Set((scans ?? []).map((item) => String(item.registration_id ?? '')).filter(Boolean)))
+    let riderNameByRegistration = new Map<string, string>()
+    if (registrationIds.length > 0) {
+      const { data: riders, error: riderError } = await supabase
+        .from('registration_rider_details')
+        .select('registration_id, first_name, last_name')
+        .in('registration_id', registrationIds)
+      if (riderError) throw riderError
+      riderNameByRegistration = new Map(
+        (riders ?? []).map((rider) => [
+          String(rider.registration_id),
+          [rider.first_name, rider.last_name].filter(Boolean).join(' ').trim() || 'Registered rider',
+        ]),
+      )
+    }
+    const scansWithRider = (scans ?? []).map((scan) => ({
+      ...scan,
+      rider_name: riderNameByRegistration.get(String(scan.registration_id ?? '')) ?? 'Registered rider',
+    }))
     return {
-      scans: (scans ?? []) as Array<Record<string, unknown>>,
+      scans: scansWithRider as Array<Record<string, unknown>>,
       stats: {
         scans: scanCount,
         valid: (scans ?? []).filter((item) => item.scan_status === 'valid').length,
