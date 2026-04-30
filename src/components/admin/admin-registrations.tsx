@@ -128,8 +128,6 @@ export function AdminRegistrations() {
 
   const paidCount = filtered.filter((r) => String(r.payment_status ?? '').toLowerCase() === 'paid').length
   const pendingCount = filtered.filter((r) => String(r.payment_status ?? '').toLowerCase() === 'pending').length
-  const approvedCount = filtered.filter((r) => String(r.status ?? '').toLowerCase() === 'approved').length
-  const rejectedCount = filtered.filter((r) => String(r.status ?? '').toLowerCase() === 'rejected').length
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const currentPage = Math.min(page, totalPages)
   const startIndex = filtered.length === 0 ? 0 : (currentPage - 1) * PAGE_SIZE
