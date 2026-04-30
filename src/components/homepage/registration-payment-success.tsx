@@ -127,8 +127,28 @@ export function RegistrationPaymentSuccess() {
   }, [registrationId])
 
   useEffect(() => {
-    void fetchCertificateData()
-  }, [fetchCertificateData])
+    let mounted = true
+    async function init() {
+      if (!registrationId) {
+        await fetchCertificateData()
+        return
+      }
+      try {
+        // Business choice: trust PayMongo success redirect and mark as paid immediately.
+        await registrationService.markRegistrationAsPaidAfterPaymongoRedirect(registrationId)
+      } catch (e) {
+        if (mounted) {
+          setError((e as Error).message || 'Failed to sync payment status.')
+        }
+      } finally {
+        if (mounted) await fetchCertificateData()
+      }
+    }
+    void init()
+    return () => {
+      mounted = false
+    }
+  }, [fetchCertificateData, registrationId])
 
   const handleDownload = useCallback(
     async (mimeType: 'image/png' | 'image/jpeg') => {
@@ -181,17 +201,17 @@ export function RegistrationPaymentSuccess() {
             Registration payment received
           </h1>
           <p className="mt-2 text-sm text-emerald-800">
-            Thank you! Your payment was submitted to PayMongo successfully. We are now verifying the transaction via
-            webhook and finalizing your registration.
+            Thank you! Your payment was submitted to PayMongo successfully. Your registration is finalized immediately
+            and your race certificate is now available.
           </p>
         </div>
 
         <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <h2 className="text-sm font-semibold text-slate-900">What happens next?</h2>
           <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm text-slate-700">
-            <li>Payment status is updated automatically from PayMongo webhook.</li>
-            <li>Your registration is marked as paid once confirmation is completed.</li>
-            <li>After confirmation, your race certificate with QR can be downloaded or emailed.</li>
+            <li>Payment is marked as paid in your registration record.</li>
+            <li>Your QR race certificate is generated from your rider information.</li>
+            <li>You can download it as PNG/JPG or send to your email.</li>
           </ol>
           <p className="mt-4 text-xs text-slate-500">
             Registration ID: <span className="font-mono text-slate-700">{registrationId ?? 'N/A'}</span>
@@ -236,36 +256,30 @@ export function RegistrationPaymentSuccess() {
                 </p>
               </div>
 
-              {!certificateData.isPaid ? (
-                <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-                  Payment is still being confirmed. Certificate generation is enabled once status becomes paid.
-                </p>
-              ) : (
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => void handleDownload('image/png')}
-                    className="inline-flex items-center rounded-md bg-[#cfae3f] px-4 py-2 text-sm font-semibold text-black transition hover:bg-[#dab852]"
-                  >
-                    Download PNG
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void handleDownload('image/jpeg')}
-                    className="inline-flex items-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-                  >
-                    Download JPG
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void handleSendEmail()}
-                    disabled={sendingEmail || !certificateData.registrantEmail}
-                    className="inline-flex items-center rounded-md border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {sendingEmail ? 'Queuing email...' : 'Send via Email'}
-                  </button>
-                </div>
-              )}
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => void handleDownload('image/png')}
+                  className="inline-flex items-center rounded-md bg-[#cfae3f] px-4 py-2 text-sm font-semibold text-black transition hover:bg-[#dab852]"
+                >
+                  Download PNG
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleDownload('image/jpeg')}
+                  className="inline-flex items-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                >
+                  Download JPG
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleSendEmail()}
+                  disabled={sendingEmail || !certificateData.registrantEmail}
+                  className="inline-flex items-center rounded-md border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {sendingEmail ? 'Queuing email...' : 'Send via Email'}
+                </button>
+              </div>
               {emailMessage ? <p className="text-sm text-slate-700">{emailMessage}</p> : null}
             </div>
           ) : null}

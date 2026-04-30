@@ -221,6 +221,56 @@ export const registrationService = {
     }
   },
 
+  async markRegistrationAsPaidAfterPaymongoRedirect(registrationId: string) {
+    const now = new Date().toISOString()
+    const { data: order, error: orderLookupError } = await supabase
+      .from('payment_orders')
+      .select('id, status, amount, currency, provider_reference')
+      .eq('registration_id', registrationId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (orderLookupError) throw orderLookupError
+    if (!order?.id) throw new Error('Payment order not found for registration.')
+
+    if (String(order.status).toLowerCase() !== 'paid') {
+      const { error: orderUpdateError } = await supabase
+        .from('payment_orders')
+        .update({
+          status: 'paid',
+          paid_at: now,
+          updated_at: now,
+        })
+        .eq('id', order.id)
+      if (orderUpdateError) throw orderUpdateError
+
+      const { error: txInsertError } = await supabase.from('payment_transactions').insert({
+        payment_order_id: order.id,
+        status: 'paid',
+        amount: Number(order.amount ?? 0),
+        currency: String(order.currency ?? 'PHP'),
+        paid_at: now,
+        provider_event_type: 'checkout_success_redirect',
+        provider_reference: order.provider_reference ?? null,
+        raw_payload: {
+          source: 'client_success_redirect',
+          registration_id: registrationId,
+        },
+      })
+      if (txInsertError) throw txInsertError
+    }
+
+    const { error: registrationUpdateError } = await supabase
+      .from('registration_forms')
+      .update({
+        status: 'paid',
+        confirmed_at: now,
+        updated_at: now,
+      })
+      .eq('id', registrationId)
+    if (registrationUpdateError) throw registrationUpdateError
+  },
+
   async getRegistrationCertificateData(registrationId: string): Promise<RegistrationCertificateData | null> {
     const { data: registration, error: registrationError } = await supabase
       .from('registration_forms')
