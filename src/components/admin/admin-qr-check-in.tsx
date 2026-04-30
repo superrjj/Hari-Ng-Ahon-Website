@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { supabase } from '../../lib/supabase'
 import { adminModulesApi } from '../../services/adminModulesApi'
-import { DataTable, ModuleShell, SectionCard, formatDate, useModuleLoader } from './admin-module-shared'
+import { ModuleShell, SectionCard, formatDate, useModuleLoader } from './admin-module-shared'
 
 type ScannerControls = {
   stop: () => void
@@ -261,6 +261,28 @@ export function AdminQrCheckIn() {
     return () => stopCamera()
   }, [startCamera, stopCamera])
 
+  useEffect(() => {
+    const ensureCameraRunning = () => {
+      if (!controlsRef.current) {
+        void startCamera()
+      }
+    }
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') ensureCameraRunning()
+    }
+
+    window.addEventListener('focus', ensureCameraRunning)
+    window.addEventListener('pageshow', ensureCameraRunning)
+    document.addEventListener('visibilitychange', onVisibilityChange)
+
+    return () => {
+      window.removeEventListener('focus', ensureCameraRunning)
+      window.removeEventListener('pageshow', ensureCameraRunning)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+    }
+  }, [startCamera])
+
   const historyRows = useMemo(() => data?.scans ?? [], [data?.scans])
 
   const handleClaimKit = useCallback(async () => {
@@ -462,41 +484,32 @@ export function AdminQrCheckIn() {
         {historyRows.length === 0 ? (
           <p className="text-sm text-slate-500">No scan history yet.</p>
         ) : (
-          <>
-            <div className="space-y-2 md:hidden">
-              {historyRows.map((row, index) => (
-                <div key={String(row.id ?? index)} className="rounded-lg border border-slate-200 p-3">
-                  <p className="text-sm font-semibold text-slate-900">{String(row.rider_name ?? 'Registered rider')}</p>
-                  <p className="text-xs text-slate-500">{String(row.scanned_code ?? '—')}</p>
-                  <div className="mt-2 flex items-center justify-between">
-                    <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold ${statusBadgeClass(row.scan_status)}`}>
-                      {formatScanStatusLabel(row.scan_status)}
-                    </span>
-                    <span className="text-xs text-slate-500">{formatDate(row.scanned_at)}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="hidden md:block">
-              <DataTable
-                rows={historyRows}
-                columns={[
-                  { key: 'scanned_code', label: 'Code' },
-                  { key: 'rider_name', label: 'Rider' },
-                  {
-                    key: 'scan_status',
-                    label: 'Status',
-                    render: (row) => (
-                      <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold ${statusBadgeClass(row.scan_status)}`}>
+          <div className="-mx-2 overflow-x-auto px-2 sm:mx-0 sm:px-0">
+            <table className="min-w-[640px] w-full divide-y divide-slate-200 text-xs sm:text-sm">
+              <thead className="bg-slate-50">
+                <tr>
+                  <th className="px-2 py-2 text-left font-semibold text-slate-600 sm:px-3">Code</th>
+                  <th className="px-2 py-2 text-left font-semibold text-slate-600 sm:px-3">Rider</th>
+                  <th className="px-2 py-2 text-left font-semibold text-slate-600 sm:px-3">Status</th>
+                  <th className="px-2 py-2 text-left font-semibold text-slate-600 sm:px-3">Scanned At</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 bg-white">
+                {historyRows.map((row, index) => (
+                  <tr key={String(row.id ?? index)}>
+                    <td className="px-2 py-2 text-slate-700 sm:px-3">{String(row.scanned_code ?? '—')}</td>
+                    <td className="px-2 py-2 text-slate-700 sm:px-3">{String(row.rider_name ?? 'Registered rider')}</td>
+                    <td className="px-2 py-2 sm:px-3">
+                      <span className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusBadgeClass(row.scan_status)}`}>
                         {formatScanStatusLabel(row.scan_status)}
                       </span>
-                    ),
-                  },
-                  { key: 'scanned_at', label: 'Scanned At', render: (row) => formatDate(row.scanned_at) },
-                ]}
-              />
-            </div>
-          </>
+                    </td>
+                    <td className="px-2 py-2 text-slate-700 sm:px-3">{formatDate(row.scanned_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </SectionCard>
     </ModuleShell>
