@@ -194,17 +194,49 @@ export function AdminQrCheckIn() {
     try {
       const { data: authData } = await supabase.auth.getSession()
       const scannedBy = authData.session?.user?.id ?? null
+      const now = new Date().toISOString()
+
+      const { data: raceBib, error: raceBibLookupError } = await supabase
+        .from('race_bibs')
+        .select('id')
+        .eq('registration_id', scanResult.registrationId)
+        .limit(1)
+        .maybeSingle()
+      if (raceBibLookupError) throw raceBibLookupError
 
       const { error: insertError } = await supabase.from('qr_checkins').insert({
         event_id: scanResult.eventId,
         registration_id: scanResult.registrationId,
+        race_bib_id: raceBib?.id ?? null,
         scanned_code: scanResult.code,
         scan_status: 'valid',
-        scanned_at: new Date().toISOString(),
+        scanned_at: now,
         scanned_by: scannedBy,
         device_label: navigator.userAgent.includes('Mobile') ? 'Mobile Scanner' : 'Web Scanner',
       })
       if (insertError) throw insertError
+
+      if (raceBib?.id) {
+        const { error: raceBibUpdateError } = await supabase
+          .from('race_bibs')
+          .update({
+            status: 'claimed',
+            claimed_at: now,
+            claimed_by: scannedBy,
+            notes: 'Claimed via QR scanner',
+          })
+          .eq('id', raceBib.id)
+        if (raceBibUpdateError) throw raceBibUpdateError
+      }
+
+      const { error: registrationUpdateError } = await supabase
+        .from('registration_forms')
+        .update({
+          checked_in_at: now,
+          checked_in_by: scannedBy,
+        })
+        .eq('id', scanResult.registrationId)
+      if (registrationUpdateError) throw registrationUpdateError
 
       toast.success('Race kit successfully claimed.')
       setClaimDialogOpen(false)
