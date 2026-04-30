@@ -25,6 +25,22 @@ type ScanResult = {
   scannedAt: string
 }
 
+function formatScanStatusLabel(value: unknown) {
+  const status = String(value ?? '').toLowerCase()
+  if (status === 'valid') return 'Claimed'
+  if (status === 'duplicate') return 'Duplicate'
+  if (status === 'invalid') return 'Invalid'
+  return 'Unknown'
+}
+
+function statusBadgeClass(value: unknown) {
+  const status = String(value ?? '').toLowerCase()
+  if (status === 'valid') return 'bg-emerald-50 text-emerald-700 border-emerald-200'
+  if (status === 'duplicate') return 'bg-amber-50 text-amber-700 border-amber-200'
+  if (status === 'invalid') return 'bg-rose-50 text-rose-700 border-rose-200'
+  return 'bg-slate-50 text-slate-700 border-slate-200'
+}
+
 function extractBibFromCode(code: string) {
   const trimmed = code.trim()
   const match = trimmed.match(/BIB:([^|]+)/i)
@@ -245,9 +261,7 @@ export function AdminQrCheckIn() {
     return () => stopCamera()
   }, [startCamera, stopCamera])
 
-  const recentScans = useMemo(() => {
-    return (data?.scans ?? []).slice(0, 5)
-  }, [data?.scans])
+  const historyRows = useMemo(() => data?.scans ?? [], [data?.scans])
 
   const handleClaimKit = useCallback(async () => {
     if (!scanResult || scanResult.status !== 'valid' || !scanResult.registrationId || !scanResult.eventId) return
@@ -444,35 +458,46 @@ export function AdminQrCheckIn() {
         </div>
       </SectionCard>
 
-      <div className="grid gap-6">
-        <SectionCard title="Recent Scans" subtitle="Latest scan activity from this venue.">
-          <div className="space-y-2">
-            {recentScans.length === 0 ? (
-              <p className="text-sm text-slate-500">No recent scans yet.</p>
-            ) : (
-              recentScans.map((scan, index) => (
-                <div key={String(scan.id ?? index)} className="rounded-lg border border-slate-200 px-3 py-2">
-                  <p className="text-sm font-medium text-slate-800">{String(scan.scanned_code ?? '—')}</p>
-                  <p className="text-xs text-slate-500">
-                    {String(scan.scan_status ?? 'unknown')} · {formatDate(scan.scanned_at)}
-                  </p>
-                </div>
-              ))
-            )}
-          </div>
-        </SectionCard>
-      </div>
-
       <SectionCard title="QR Scan History" subtitle="Venue scans, rider, validation result, and timestamp.">
-        <DataTable
-          rows={data?.scans ?? []}
-          columns={[
-            { key: 'scanned_code', label: 'Code' },
-            { key: 'rider_name', label: 'Rider' },
-            { key: 'scan_status', label: 'Status' },
-            { key: 'scanned_at', label: 'Scanned At', render: (row) => formatDate(row.scanned_at) },
-          ]}
-        />
+        {historyRows.length === 0 ? (
+          <p className="text-sm text-slate-500">No scan history yet.</p>
+        ) : (
+          <>
+            <div className="space-y-2 md:hidden">
+              {historyRows.map((row, index) => (
+                <div key={String(row.id ?? index)} className="rounded-lg border border-slate-200 p-3">
+                  <p className="text-sm font-semibold text-slate-900">{String(row.rider_name ?? 'Registered rider')}</p>
+                  <p className="text-xs text-slate-500">{String(row.scanned_code ?? '—')}</p>
+                  <div className="mt-2 flex items-center justify-between">
+                    <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold ${statusBadgeClass(row.scan_status)}`}>
+                      {formatScanStatusLabel(row.scan_status)}
+                    </span>
+                    <span className="text-xs text-slate-500">{formatDate(row.scanned_at)}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="hidden md:block">
+              <DataTable
+                rows={historyRows}
+                columns={[
+                  { key: 'scanned_code', label: 'Code' },
+                  { key: 'rider_name', label: 'Rider' },
+                  {
+                    key: 'scan_status',
+                    label: 'Status',
+                    render: (row) => (
+                      <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold ${statusBadgeClass(row.scan_status)}`}>
+                        {formatScanStatusLabel(row.scan_status)}
+                      </span>
+                    ),
+                  },
+                  { key: 'scanned_at', label: 'Scanned At', render: (row) => formatDate(row.scanned_at) },
+                ]}
+              />
+            </div>
+          </>
+        )}
       </SectionCard>
     </ModuleShell>
   )
