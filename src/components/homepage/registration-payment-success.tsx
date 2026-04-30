@@ -18,9 +18,8 @@ export function RegistrationPaymentSuccess() {
   const [loading, setLoading] = useState(Boolean(registrationId))
   const [error, setError] = useState<string | null>(null)
   const [certificateData, setCertificateData] = useState<RegistrationCertificateData | null>(null)
-  const [sendingEmail, setSendingEmail] = useState(false)
-  const [emailMessage, setEmailMessage] = useState<string | null>(null)
   const [checkingStatus, setCheckingStatus] = useState(false)
+  const [certificatePreviewUrl, setCertificatePreviewUrl] = useState<string | null>(null)
 
   const statusLabel = useMemo(() => {
     if (!certificateData) return null
@@ -71,7 +70,7 @@ export function RegistrationPaymentSuccess() {
       ctx.fillText('BIB NUMBER', 56, 290)
       ctx.fillText('CATEGORY', 56, 356)
       ctx.fillText('DISCIPLINE', 56, 422)
-      ctx.fillText('REGISTRATION ID', 56, 488)
+      ctx.fillText('EVENT TYPE', 56, 488)
 
       ctx.fillStyle = '#0f172a'
       ctx.font = '700 42px Arial'
@@ -80,7 +79,7 @@ export function RegistrationPaymentSuccess() {
       ctx.fillText(certificateData.category, 56, 396)
       ctx.fillText(certificateData.discipline, 56, 462)
       ctx.font = '600 24px Arial'
-      ctx.fillText(certificateData.registrationId, 56, 526)
+      ctx.fillText(certificateData.eventType, 56, 526)
 
       const qrDataUrl = await QRCode.toDataURL(certificateData.qrValue, {
         width: 300,
@@ -165,24 +164,6 @@ export function RegistrationPaymentSuccess() {
     [certificateData, createCertificateDataUrl],
   )
 
-  const handleSendEmail = useCallback(async () => {
-    if (!certificateData) return
-    setEmailMessage(null)
-    setSendingEmail(true)
-    try {
-      await registrationService.queueCertificateEmail({
-        registrationId: certificateData.registrationId,
-        recipient: certificateData.registrantEmail,
-        subject: `Race Certificate - ${certificateData.riderName} (${certificateData.bibNumber})`,
-      })
-      setEmailMessage('Certificate email has been queued for sending.')
-    } catch (e) {
-      setEmailMessage((e as Error).message || 'Unable to queue certificate email.')
-    } finally {
-      setSendingEmail(false)
-    }
-  }, [certificateData])
-
   const refreshPaymentStatus = useCallback(async () => {
     setCheckingStatus(true)
     try {
@@ -191,6 +172,26 @@ export function RegistrationPaymentSuccess() {
       setCheckingStatus(false)
     }
   }, [fetchCertificateData])
+
+  useEffect(() => {
+    let mounted = true
+    async function buildPreview() {
+      if (!certificateData) {
+        setCertificatePreviewUrl(null)
+        return
+      }
+      try {
+        const url = await createCertificateDataUrl('image/png')
+        if (mounted) setCertificatePreviewUrl(url)
+      } catch {
+        if (mounted) setCertificatePreviewUrl(null)
+      }
+    }
+    void buildPreview()
+    return () => {
+      mounted = false
+    }
+  }, [certificateData, createCertificateDataUrl])
 
   return (
     <section className="bg-white px-4 py-10 text-slate-900">
@@ -211,7 +212,7 @@ export function RegistrationPaymentSuccess() {
           <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm text-slate-700">
             <li>Payment is marked as paid in your registration record.</li>
             <li>Your QR race certificate is generated from your rider information.</li>
-            <li>You can download it as PNG/JPG or send to your email.</li>
+            <li>You can preview and download your QR certificate.</li>
           </ol>
           <p className="mt-4 text-xs text-slate-500">
             Registration ID: <span className="font-mono text-slate-700">{registrationId ?? 'N/A'}</span>
@@ -252,9 +253,15 @@ export function RegistrationPaymentSuccess() {
                   Payment: <span className={`font-semibold ${certificateData.isPaid ? 'text-emerald-700' : 'text-amber-700'}`}>{statusLabel}</span>
                 </p>
                 <p>
-                  Email: <span className="font-semibold text-slate-900">{certificateData.registrantEmail || 'Not available'}</span>
+                  Event Type: <span className="font-semibold text-slate-900">{certificateData.eventType}</span>
                 </p>
               </div>
+
+              {certificatePreviewUrl ? (
+                <div className="rounded-lg border border-slate-200 bg-white p-2">
+                  <img src={certificatePreviewUrl} alt="QR Certificate Preview" className="w-full rounded-md" />
+                </div>
+              ) : null}
 
               <div className="flex flex-wrap gap-2">
                 <button
@@ -262,25 +269,9 @@ export function RegistrationPaymentSuccess() {
                   onClick={() => void handleDownload('image/png')}
                   className="inline-flex items-center rounded-md bg-[#cfae3f] px-4 py-2 text-sm font-semibold text-black transition hover:bg-[#dab852]"
                 >
-                  Download PNG
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void handleDownload('image/jpeg')}
-                  className="inline-flex items-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-                >
-                  Download JPG
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void handleSendEmail()}
-                  disabled={sendingEmail || !certificateData.registrantEmail}
-                  className="inline-flex items-center rounded-md border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {sendingEmail ? 'Queuing email...' : 'Send via Email'}
+                  Download QR Certificate
                 </button>
               </div>
-              {emailMessage ? <p className="text-sm text-slate-700">{emailMessage}</p> : null}
             </div>
           ) : null}
         </div>

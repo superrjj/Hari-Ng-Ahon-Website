@@ -18,6 +18,7 @@ function textResponse(message: string, status: number) {
 type Body = {
   raceType: 'criterium' | 'itt' | 'road_race'
   eventId?: string
+  raceCategoryId?: string
   registrantEmail: string
   registrationFee?: number
   rider: {
@@ -89,6 +90,20 @@ Deno.serve(async (req) => {
 
   if (!event?.id) return textResponse(`No published event found for ${body.raceType}`, 400)
 
+  let resolvedRaceCategoryId: string | null = null
+  if (body.raceCategoryId) {
+    const { data: raceCategory, error: raceCategoryError } = await supabase
+      .from('race_categories')
+      .select('id')
+      .eq('id', body.raceCategoryId)
+      .eq('event_id', event.id)
+      .eq('active', true)
+      .maybeSingle()
+    if (raceCategoryError) return textResponse(raceCategoryError.message, 500)
+    if (!raceCategory?.id) return textResponse('Selected category is invalid for this event.', 400)
+    resolvedRaceCategoryId = raceCategory.id
+  }
+
   // Prevent duplicate-key failures on ux_registration_forms_email_event by reusing
   // an existing public registration for the same email + event.
   const { data: existingRegistration, error: existingRegistrationError } = await supabase
@@ -105,9 +120,22 @@ Deno.serve(async (req) => {
     if (effectiveFee && ['draft', 'pending_payment', 'payment_processing'].includes(existingRegistration.status)) {
       const { error: feeUpdateError } = await supabase
         .from('registration_forms')
-        .update({ registration_fee: effectiveFee, updated_at: new Date().toISOString() })
+        .update({
+          registration_fee: effectiveFee,
+          race_category_id: resolvedRaceCategoryId,
+          updated_at: new Date().toISOString(),
+        })
         .eq('id', existingRegistration.id)
       if (feeUpdateError) return textResponse(feeUpdateError.message, 500)
+      const { error: riderUpdateError } = await supabase
+        .from('registration_rider_details')
+        .update({
+          age_category: body.rider.ageCategory ?? null,
+          discipline: body.rider.discipline ?? null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('registration_id', existingRegistration.id)
+      if (riderUpdateError) return textResponse(riderUpdateError.message, 500)
     }
     return Response.json({ registrationId: existingRegistration.id, reused: true }, { headers: corsHeaders })
   }
@@ -117,7 +145,7 @@ Deno.serve(async (req) => {
     .insert({
       user_id: userId,
       event_id: event.id,
-      race_category_id: null,
+      race_category_id: resolvedRaceCategoryId,
       status: 'pending_payment',
       registration_fee: effectiveFee ?? Number(event.registration_fee ?? 0),
       registrant_email: normalizedEmail,

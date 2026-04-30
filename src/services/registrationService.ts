@@ -25,6 +25,7 @@ export type RegistrationCertificateData = {
   riderName: string
   category: string
   discipline: string
+  eventType: string
   bibNumber: string
   eventTitle: string
   registrantEmail: string
@@ -55,10 +56,20 @@ async function getAuthHeaders(): Promise<Record<string, string>>{
   return token ? { Authorization: `Bearer ${token}` } : {}
 }
 
+function extractBibSequence(bibNumber: string, prefix: string) {
+  const value = String(bibNumber ?? '').trim()
+  const escapedPrefix = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const match = value.match(new RegExp(`^${escapedPrefix}(\\d{2})$`))
+  if (!match) return 0
+  const n = Number.parseInt(match[1], 10)
+  return Number.isFinite(n) ? n : 0
+}
+
 export const registrationService = {
   async createRegistration(args: {
     raceType: RegistrationEventKey
     eventId?: string
+    raceCategoryId?: string
     registrantEmail: string
     registrationFee: number
     rider: {
@@ -83,6 +94,7 @@ export const registrationService = {
       body: {
         raceType: args.raceType,
         eventId: args.eventId,
+        raceCategoryId: args.raceCategoryId,
         registrantEmail: args.registrantEmail,
         registrationFee: args.registrationFee,
         rider: args.rider,
@@ -223,6 +235,56 @@ export const registrationService = {
 
   async markRegistrationAsPaidAfterPaymongoRedirect(registrationId: string) {
     const now = new Date().toISOString()
+    const { data: regForBib, error: regForBibError } = await supabase
+      .from('registration_forms')
+      .select('id, race_category_id, bib_number')
+      .eq('id', registrationId)
+      .maybeSingle()
+    if (regForBibError) throw regForBibError
+    if (!regForBib) throw new Error('Registration record not found.')
+
+    if (!String(regForBib.bib_number ?? '').trim()) {
+      const { data: raceCategory, error: raceCategoryError } = await supabase
+        .from('race_categories')
+        .select('code, category_name, rider_limit')
+        .eq('id', regForBib.race_category_id)
+        .maybeSingle()
+      if (raceCategoryError) throw raceCategoryError
+      const categoryCode = String(raceCategory?.code ?? '').trim()
+      const bibPrefix = categoryCode || '00'
+
+      const { data: existingBibs, error: existingBibsError } = await supabase
+        .from('registration_forms')
+        .select('bib_number')
+        .eq('race_category_id', regForBib.race_category_id)
+        .not('bib_number', 'is', null)
+        .order('created_at', { ascending: true })
+        .limit(5000)
+      if (existingBibsError) throw existingBibsError
+
+      const maxSequence = (existingBibs ?? []).reduce((max, row) => {
+        const seq = extractBibSequence(String(row.bib_number ?? ''), bibPrefix)
+        return seq > max ? seq : max
+      }, 0)
+      const nextSequence = maxSequence + 1
+      const riderLimit = Number(raceCategory?.rider_limit ?? 0)
+      if (Number.isFinite(riderLimit) && riderLimit > 0 && nextSequence > riderLimit) {
+        throw new Error(
+          `Category limit reached for ${String(raceCategory?.category_name ?? 'selected category')}. Max riders: ${riderLimit}.`,
+        )
+      }
+      const generatedBib = `${bibPrefix}${String(nextSequence).padStart(2, '0')}`
+
+      const { error: bibUpdateError } = await supabase
+        .from('registration_forms')
+        .update({
+          bib_number: generatedBib,
+          updated_at: now,
+        })
+        .eq('id', regForBib.id)
+      if (bibUpdateError) throw bibUpdateError
+    }
+
     const { data: order, error: orderLookupError } = await supabase
       .from('payment_orders')
       .select('id, status, amount, currency, provider_reference')
@@ -274,13 +336,13 @@ export const registrationService = {
   async getRegistrationCertificateData(registrationId: string): Promise<RegistrationCertificateData | null> {
     const { data: registration, error: registrationError } = await supabase
       .from('registration_forms')
-      .select('id, event_id, bib_number, registrant_email, status')
+      .select('id, event_id, race_category_id, bib_number, registrant_email, status')
       .eq('id', registrationId)
       .maybeSingle()
     if (registrationError) throw registrationError
     if (!registration) return null
 
-    const [{ data: rider, error: riderError }, { data: event, error: eventError }, { data: order, error: orderError }] =
+    const [{ data: rider, error: riderError }, { data: event, error: eventError }, { data: order, error: orderError }, { data: raceCategory, error: raceCategoryError }] =
       await Promise.all([
         supabase
           .from('registration_rider_details')
@@ -295,11 +357,13 @@ export const registrationService = {
           .order('created_at', { ascending: false })
           .limit(1)
           .maybeSingle(),
+        supabase.from('race_categories').select('category_name, code').eq('id', registration.race_category_id).maybeSingle(),
       ])
 
     if (riderError) throw riderError
     if (eventError) throw eventError
     if (orderError) throw orderError
+    if (raceCategoryError) throw raceCategoryError
 
     let txStatus: string | null = null
     let txPaidAt: string | null = null
@@ -317,9 +381,10 @@ export const registrationService = {
     }
 
     const riderName = [rider?.first_name, rider?.last_name].filter(Boolean).join(' ').trim() || 'Registered Rider'
-    const category = String(rider?.age_category ?? 'Open Category')
+    const category = String(rider?.age_category ?? raceCategory?.category_name ?? 'Open Category')
     const discipline = String(rider?.discipline ?? event?.race_type ?? 'Cycling')
-    const bibNumber = String(registration.bib_number ?? '').trim() || registration.id.slice(0, 8).toUpperCase()
+    const eventType = String(event?.race_type ?? 'Criterium')
+    const bibNumber = String(registration.bib_number ?? '').trim() || `${String(raceCategory?.code ?? '00').trim()}00`
     const paymentStatus = String(txStatus ?? order?.status ?? registration.status ?? 'pending')
     const normalizedStatus = paymentStatus.toLowerCase()
     const isPaid = normalizedStatus === 'paid'
@@ -329,10 +394,11 @@ export const registrationService = {
       riderName,
       category,
       discipline,
+      eventType,
       bibNumber,
       eventTitle: String(event?.title ?? 'Hari ng Ahon'),
       registrantEmail: String(registration.registrant_email ?? ''),
-      qrValue: `HNA|${registration.id}|${bibNumber}`,
+      qrValue: `BIB:${bibNumber}|EVENT:${eventType}`,
       paymentStatus,
       isPaid,
       paidAt: txPaidAt ?? order?.paid_at ?? null,

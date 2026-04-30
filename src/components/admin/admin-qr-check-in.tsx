@@ -16,12 +16,45 @@ type ScanResult = {
   status: 'valid' | 'invalid' | 'duplicate'
   message: string
   code: string
+  qrFields: Array<{ label: string; value: string }>
   riderName?: string
   category?: string
   bibNumber?: string
   eventTitle?: string
   registrationId?: string
   scannedAt: string
+}
+
+function isUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+}
+
+function extractBibFromCode(code: string) {
+  const trimmed = code.trim()
+  const match = trimmed.match(/BIB:([^|]+)/i)
+  if (match?.[1]) return match[1].trim()
+  return trimmed
+}
+
+function parseQrFields(code: string): Array<{ label: string; value: string }> {
+  const chunks = code
+    .split('|')
+    .map((part) => part.trim())
+    .filter(Boolean)
+  const fields = chunks
+    .map((chunk) => {
+      const [rawKey, ...rawValue] = chunk.split(':')
+      if (!rawKey || rawValue.length === 0) return null
+      const key = rawKey.trim()
+      const value = rawValue.join(':').trim()
+      if (!key || !value) return null
+      return {
+        label: key.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase()),
+        value,
+      }
+    })
+    .filter(Boolean) as Array<{ label: string; value: string }>
+  return fields.length > 0 ? fields : [{ label: 'Code', value: code }]
 }
 
 function labelForStatus(status: ScanResult['status']) {
@@ -44,6 +77,8 @@ export function AdminQrCheckIn() {
   const [cameraError, setCameraError] = useState<string | null>(null)
   const [torchOn, setTorchOn] = useState(false)
   const [scanResult, setScanResult] = useState<ScanResult | null>(null)
+  const [claimDialogOpen, setClaimDialogOpen] = useState(false)
+  const [claimingKit, setClaimingKit] = useState(false)
 
   const stopCamera = useCallback(() => {
     controlsRef.current?.stop()
@@ -54,29 +89,39 @@ export function AdminQrCheckIn() {
 
   const processCode = useCallback(async (rawCode: string) => {
     const code = rawCode.trim()
+    const lookupCode = extractBibFromCode(code)
     if (!code || scanLockRef.current || code === lastScanRef.current) return
     scanLockRef.current = true
     lastScanRef.current = code
     setProcessing(true)
     try {
-      const { data: duplicate } = await supabase.from('qr_checkins').select('id').eq('scanned_code', code).limit(1).maybeSingle()
+      const { data: duplicate } = await supabase.from('qr_checkins').select('id').eq('scanned_code', lookupCode).limit(1).maybeSingle()
 
       if (duplicate?.id) {
         setScanResult({
           status: 'duplicate',
           message: 'This code has already been checked in.',
           code,
+          qrFields: parseQrFields(code),
           scannedAt: new Date().toISOString(),
         })
+        setClaimDialogOpen(false)
         return
       }
 
-      const { data: registration, error: regError } = await supabase
+      let registrationQuery = supabase
         .from('registration_forms')
         .select('id, bib_number, status, event_id')
-        .or(`id.eq.${code},bib_number.eq.${code}`)
+        .eq('bib_number', lookupCode)
         .limit(1)
-        .maybeSingle()
+      if (isUuid(lookupCode)) {
+        registrationQuery = supabase
+          .from('registration_forms')
+          .select('id, bib_number, status, event_id')
+          .or(`id.eq.${lookupCode},bib_number.eq.${lookupCode}`)
+          .limit(1)
+      }
+      const { data: registration, error: regError } = await registrationQuery.maybeSingle()
       if (regError) throw regError
 
       if (!registration?.id) {
@@ -84,8 +129,10 @@ export function AdminQrCheckIn() {
           status: 'invalid',
           message: 'No rider matched this QR code.',
           code,
+          qrFields: parseQrFields(code),
           scannedAt: new Date().toISOString(),
         })
+        setClaimDialogOpen(false)
         return
       }
 
@@ -102,19 +149,11 @@ export function AdminQrCheckIn() {
       const riderName = [rider?.first_name, rider?.last_name].filter(Boolean).join(' ').trim() || 'Registered rider'
       const bibNumber = registration.bib_number ? String(registration.bib_number) : code
 
-      const { error: insertError } = await supabase.from('qr_checkins').insert({
-        registration_id: registration.id,
-        scanned_code: code,
-        scan_status: 'valid',
-        scanned_at: new Date().toISOString(),
-        device_label: navigator.userAgent.includes('Mobile') ? 'Mobile Scanner' : 'Web Scanner',
-      })
-      if (insertError) throw insertError
-
       setScanResult({
         status: 'valid',
         message: 'Ready to claim race kit.',
-        code,
+        code: lookupCode,
+        qrFields: parseQrFields(code),
         riderName,
         category: rider?.age_category ?? 'Uncategorized',
         bibNumber,
@@ -122,7 +161,7 @@ export function AdminQrCheckIn() {
         registrationId: registration.id,
         scannedAt: new Date().toISOString(),
       })
-      setReloadKey((value) => value + 1)
+      setClaimDialogOpen(true)
     } catch (scanError) {
       toast.error((scanError as Error).message || 'Failed to process QR scan.')
     } finally {
@@ -196,8 +235,72 @@ export function AdminQrCheckIn() {
     return (data?.scans ?? []).slice(0, 5)
   }, [data?.scans])
 
+  const handleClaimKit = useCallback(async () => {
+    if (!scanResult || scanResult.status !== 'valid' || !scanResult.registrationId) return
+    setClaimingKit(true)
+    try {
+      const { error: insertError } = await supabase.from('qr_checkins').insert({
+        registration_id: scanResult.registrationId,
+        scanned_code: scanResult.code,
+        scan_status: 'valid',
+        scanned_at: new Date().toISOString(),
+        device_label: navigator.userAgent.includes('Mobile') ? 'Mobile Scanner' : 'Web Scanner',
+      })
+      if (insertError) throw insertError
+
+      toast.success('Race kit successfully claimed.')
+      setClaimDialogOpen(false)
+      setScanResult(null)
+      setReloadKey((value) => value + 1)
+    } catch (claimError) {
+      toast.error((claimError as Error).message || 'Failed to claim race kit.')
+    } finally {
+      setClaimingKit(false)
+    }
+  }, [scanResult])
+
   return (
     <ModuleShell loading={loading} error={error}>
+      {claimDialogOpen && scanResult?.status === 'valid' ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">
+          <div className="w-full max-w-md rounded-2xl border border-emerald-200 bg-white shadow-2xl">
+            <div className="rounded-t-2xl border-b border-emerald-200 bg-emerald-50 px-5 py-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Valid rider</p>
+              <p className="text-sm text-emerald-900">Ready to claim race kit.</p>
+            </div>
+            <div className="space-y-2 px-5 py-4">
+              {scanResult.qrFields.map((field) => (
+                <div key={`${field.label}-${field.value}`} className="flex items-center justify-between gap-3 text-sm">
+                  <p className="text-slate-500">{field.label}</p>
+                  <p className="font-semibold text-slate-900">{field.value}</p>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-3 border-t border-slate-200 px-5 py-4">
+              <button
+                type="button"
+                onClick={() => void handleClaimKit()}
+                disabled={claimingKit}
+                className="inline-flex flex-1 items-center justify-center rounded-md bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-60"
+              >
+                {claimingKit ? 'Claiming...' : 'Claim Kit'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setClaimDialogOpen(false)
+                  setScanResult(null)
+                }}
+                disabled={claimingKit}
+                className="inline-flex flex-1 items-center justify-center rounded-md border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <SectionCard title="QR Scanner" subtitle="Point the camera at the rider QR code to validate check-in.">
         <div className="space-y-4">
           <div className="overflow-hidden rounded-2xl border border-slate-700 bg-slate-950 shadow-lg">

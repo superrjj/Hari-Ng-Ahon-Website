@@ -134,7 +134,7 @@ export function RegistrationForm() {
     teamName: '',
     discipline: '',
   })
-  const [category, setCategory] = useState('')
+  const [categoryId, setCategoryId] = useState('')
   const [shirtSize, setShirtSize] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -250,7 +250,7 @@ export function RegistrationForm() {
     if (!selectedEvent?.id) {
       setDisciplineGroups([])
       setForm((p) => ({ ...p, discipline: '' }))
-      setCategory('')
+      setCategoryId('')
       return
     }
     let active = true
@@ -284,7 +284,7 @@ export function RegistrationForm() {
           // Auto-select first discipline
           const firstDisc = groups[0]?.discipline ?? ''
           setForm((p) => ({ ...p, discipline: firstDisc }))
-          setCategory('')
+          setCategoryId('')
         } finally {
           if (!active) return
           setCategoriesLoading(false)
@@ -303,6 +303,14 @@ export function RegistrationForm() {
   const currentCategoryNames = useMemo(
     () => (currentDisciplineGroup?.categories ?? []).map((c) => c.category_name),
     [currentDisciplineGroup],
+  )
+  const currentCategoryIds = useMemo(
+    () => (currentDisciplineGroup?.categories ?? []).map((c) => c.id),
+    [currentDisciplineGroup],
+  )
+  const selectedCategory = useMemo(
+    () => (currentDisciplineGroup?.categories ?? []).find((c) => c.id === categoryId) ?? null,
+    [currentDisciplineGroup, categoryId],
   )
 
   // Does this discipline have age-graded categories (Youth / Junior / Masters)?
@@ -323,10 +331,10 @@ export function RegistrationForm() {
   // When the discipline changes and the currently selected category doesn't exist in the new list,
   // clear it so the rider must re-select.
   useEffect(() => {
-    if (category && !currentCategoryNames.includes(category)) {
-      setCategory('')
+    if (categoryId && !currentCategoryIds.includes(categoryId)) {
+      setCategoryId('')
     }
-  }, [category, currentCategoryNames])
+  }, [categoryId, currentCategoryIds])
 
 
   // ── Submit ─────────────────────────────────────────────────────────────────
@@ -344,7 +352,7 @@ export function RegistrationForm() {
     if (!form.contactNumber) errors.contactNumber = 'Contact number is required.'
     if (!form.emergencyContactName) errors.emergencyContactName = 'Emergency contact name is required.'
     if (!form.emergencyContactNumber) errors.emergencyContactNumber = 'Emergency contact number is required.'
-    if (!category) errors.category = 'Please select a category.'
+    if (!categoryId) errors.category = 'Please select a category.'
     if (!shirtSize) errors.shirtSize = 'Please select a shirt size.'
     if (!selectedEvent) errors.event = 'Please select an event.'
     if (selectedEventTypeSlugs.length === 0) errors.eventTypes = 'Please select at least one event type.'
@@ -363,6 +371,7 @@ export function RegistrationForm() {
       const { registrationId } = await registrationService.createRegistration({
         raceType: raceTypeLabel || (selectedEvent!.race_type ?? ''),
         eventId: selectedEvent!.id,
+        raceCategoryId: categoryId,
         // Pass computed total so payment page reflects actual charge
         registrationFee: totalFee,
         registrantEmail: form.email,
@@ -378,7 +387,7 @@ export function RegistrationForm() {
           emergencyContactNumber: form.emergencyContactNumber,
           teamName: form.teamName,
           discipline: form.discipline,
-          ageCategory: category,
+          ageCategory: selectedCategory?.category_name ?? '',
           jerseySize: shirtSize,
         },
       })
@@ -608,7 +617,7 @@ export function RegistrationForm() {
                   value={form.discipline}
                   onChange={(e) => {
                     setForm((p) => ({ ...p, discipline: e.target.value }))
-                    setCategory('')
+                    setCategoryId('')
                   }}
                   className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-[#cfae3f]"
                 >
@@ -626,8 +635,8 @@ export function RegistrationForm() {
                   Age / Class Category <span className="text-rose-500">*</span>
                 </label>
                 <select
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value)}
+                  value={categoryId}
+                  onChange={(e) => setCategoryId(e.target.value)}
                   className={`w-full rounded-md border bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-[#cfae3f] ${fieldErrors.category ? 'border-rose-400' : 'border-slate-300'
                     }`}
                 >
@@ -635,7 +644,7 @@ export function RegistrationForm() {
                     Select category
                   </option>
                   {currentDisciplineGroup?.categories.map((cat) => (
-                    <option key={cat.id} value={cat.category_name}>
+                    <option key={cat.id} value={cat.id}>
                       {cat.category_name}
                     </option>
                   ))}
@@ -659,25 +668,28 @@ export function RegistrationForm() {
                   Suggested category:{' '}
                   <span className="font-semibold text-slate-900">{suggestedAgeCategory}</span>
                 </p>
-                {category !== suggestedAgeCategory && (
+                {selectedCategory?.category_name !== suggestedAgeCategory && (
                   <button
                     type="button"
-                    onClick={() => setCategory(suggestedAgeCategory)}
+                    onClick={() => {
+                      const match = (currentDisciplineGroup?.categories ?? []).find((cat) => cat.category_name === suggestedAgeCategory)
+                      if (match) setCategoryId(match.id)
+                    }}
                     className="rounded-md bg-[#1e4a8e] px-3 py-1 text-xs font-semibold text-white hover:bg-[#163b72] transition"
                   >
                     Use this category
                   </button>
                 )}
-                {category === suggestedAgeCategory && (
+                {selectedCategory?.category_name === suggestedAgeCategory && (
                   <span className="text-xs font-semibold text-emerald-700">✓ Applied</span>
                 )}
               </div>
             </div>
           )}
 
-          {!hasAgeCategories && category && (
+          {!hasAgeCategories && selectedCategory && (
             <p className="text-xs text-slate-600">
-              Selected: <span className="font-semibold text-slate-900">{category}</span>
+              Selected: <span className="font-semibold text-slate-900">{selectedCategory.category_name}</span>
             </p>
           )}
         </div>

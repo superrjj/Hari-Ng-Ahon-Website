@@ -300,7 +300,7 @@ export function AdminRegistrations() {
                       <td className="py-3 pr-3 text-xs">
                         {isPaid ? <span className="font-semibold text-emerald-700">{referenceNo || '-'}</span> : <span className="text-slate-400">-</span>}
                       </td>
-                      <td className="py-3 pr-3 text-xs font-semibold text-slate-700">—</td>
+                      <td className="py-3 pr-3 text-xs font-semibold text-slate-700">{r.bib_number ?? '—'}</td>
                       <td className="py-3 pr-4 text-right">
                         <Link
                           to={`/admin/registrations/${encodeURIComponent(r.id)}`}

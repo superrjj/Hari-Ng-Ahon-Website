@@ -5,6 +5,7 @@ export type PaymentStatus = 'pending' | 'paid' | 'failed' | 'refunded' | 'unknow
 export interface AdminRegistrationRow {
   id: string
   created_at?: string
+  bib_number?: string | null
   race_type?: string | null
   discipline?: string | null
   age_category?: string | null
@@ -56,7 +57,7 @@ export const adminApi = {
     // which can break when events is split into step tables.
     const { data: forms, error: formsError } = await supabase
       .from('registration_forms')
-      .select('id, created_at, status, registrant_email, user_id, event_id')
+      .select('id, created_at, status, registrant_email, user_id, event_id, bib_number')
       .order('created_at', { ascending: false })
       .limit(200)
 
@@ -64,6 +65,7 @@ export const adminApi = {
     const base = (forms ?? []) as Array<{
       id: string
       created_at?: string
+      bib_number?: string | null
       status?: string | null
       registrant_email?: string | null
       user_id?: string | null
@@ -148,6 +150,7 @@ export const adminApi = {
       return {
         id: f.id,
         created_at: f.created_at,
+        bib_number: f.bib_number ?? null,
         race_type: ev?.race_type ?? null,
         discipline: rider?.discipline ?? null,
         age_category: rider?.age_category ?? null,
