@@ -22,19 +22,6 @@ interface DisciplineGroup {
   categories: RaceCategory[]
 }
 
-const CATEGORY_PREVIEW_LIMIT = 5
-
-const DISCIPLINE_ICONS: Record<string, string> = {
-  'Road Bike': '🚴',
-  'Mountain Bike': '🚵',
-  MTB: '🚵',
-  Gravel: '🪨',
-  'Gravel Bike': '🪨',
-  'E-Bike': '⚡',
-  'E-Bike (Open)': '⚡',
-  Mixed: '🎽',
-}
-
 const DISCIPLINE_TIRE_HINTS: Record<string, string> = {
   'Road Bike': 'Tire Size: <32mm / <1.25"',
   'Mountain Bike': 'Tire Size: >50mm / 1.95"',
@@ -60,17 +47,12 @@ function CategorySkeleton() {
 // ─── Discipline Card ──────────────────────────────────────────────────────────
 
 function DisciplineCard({ group }: { group: DisciplineGroup }) {
-  const [expanded, setExpanded] = useState(false)
-  const icon = DISCIPLINE_ICONS[group.discipline] ?? '🚴'
   const tireHint = DISCIPLINE_TIRE_HINTS[group.discipline] ?? null
   const activeCategories = group.categories.filter((c) => c.active)
-  const visible = expanded ? activeCategories : activeCategories.slice(0, CATEGORY_PREVIEW_LIMIT)
-  const hasMore = activeCategories.length > CATEGORY_PREVIEW_LIMIT
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-[0_12px_30px_-12px_rgba(15,23,42,0.28),0_6px_14px_-8px_rgba(15,23,42,0.2)] sm:p-5">
       <div className="flex items-center gap-2 mb-1">
-        <span className="text-base" aria-hidden="true">{icon}</span>
         <h4 className="text-sm font-semibold">{group.discipline}</h4>
       </div>
       {tireHint && (
@@ -79,24 +61,11 @@ function DisciplineCard({ group }: { group: DisciplineGroup }) {
       {activeCategories.length === 0 ? (
         <p className="mt-3 text-xs text-slate-400 italic">No active categories.</p>
       ) : (
-        <>
-          <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-slate-700 marker:text-slate-500">
-            {visible.map((cat) => (
-              <li key={cat.id}>{cat.category_name}</li>
-            ))}
-          </ul>
-          {hasMore && (
-            <button
-              type="button"
-              onClick={() => setExpanded((v) => !v)}
-              className="mt-2 text-xs font-semibold text-[#1e4a8e] hover:underline"
-            >
-              {expanded
-                ? 'See less'
-                : `See ${activeCategories.length - CATEGORY_PREVIEW_LIMIT} more…`}
-            </button>
-          )}
-        </>
+        <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-slate-700 marker:text-slate-500">
+          {activeCategories.map((cat) => (
+            <li key={cat.id}>{cat.category_name}</li>
+          ))}
+        </ul>
       )}
     </div>
   )

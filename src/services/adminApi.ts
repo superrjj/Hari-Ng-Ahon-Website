@@ -103,7 +103,7 @@ export const adminApi = {
         last_name: rider.last_name ?? null,
         discipline: rider.discipline ?? null,
         age_category: rider.age_category ?? null,
-        team_name: rider.team_name ?? null, // ✅ added team_name
+        team_name: rider.team_name ?? null,
       })
     }
 
@@ -152,7 +152,7 @@ export const adminApi = {
         discipline: rider?.discipline ?? null,
         age_category: rider?.age_category ?? null,
         event_title: ev?.title ?? null,
-        team_name: rider?.team_name ?? null, // ✅ added team_name
+        team_name: rider?.team_name ?? null, 
         rider_full_name: riderFullName || null,
         registrant_email: f.registrant_email ?? null,
         status: f.status ?? null,

@@ -244,7 +244,7 @@ export function RegistrationForm() {
 
   // ── Race Categories from DB ────────────────────────────────────────────────
   const [disciplineGroups, setDisciplineGroups] = useState<DisciplineGroup[]>([])
-  const [categoriesLoading, setCategoriesLoading] = useState(false)
+  const [categoriesLoading, setCategoriesLoading] = useState(true)
 
   useEffect(() => {
     if (!selectedEvent?.id) {
@@ -582,7 +582,19 @@ export function RegistrationForm() {
           </div>
 
           {categoriesLoading ? (
-            <p className="text-xs text-slate-500">Loading categories…</p>
+             <div className="grid gap-4 md:grid-cols-2">
+              {Array.from({ length: 1 }).map((_, i) => (
+                <div key={i} className="animate-pulse rounded-lg border border-slate-200 bg-white p-4">
+                  <div className="h-4 w-32 rounded bg-slate-200 mb-2" />
+                  <div className="h-3 w-40 rounded bg-slate-100 mb-4" />
+                  <div className="space-y-2">
+                    {Array.from({ length: 1 }).map((_, j) => (
+                      <div key={j} className="h-3 w-3/4 rounded bg-slate-100" />
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
           ) : disciplineGroups.length === 0 ? (
             <p className="text-xs text-rose-600">No categories configured for this event.</p>
           ) : (
