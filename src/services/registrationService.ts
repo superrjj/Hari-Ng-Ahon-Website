@@ -20,6 +20,20 @@ export type CheckoutItem = {
   currency: string
 }
 
+export type RegistrationCertificateData = {
+  registrationId: string
+  riderName: string
+  category: string
+  discipline: string
+  bibNumber: string
+  eventTitle: string
+  registrantEmail: string
+  qrValue: string
+  paymentStatus: string
+  isPaid: boolean
+  paidAt: string | null
+}
+
 async function getEdgeFunctionErrorMessage(error: unknown, fallback: string): Promise<string> {
   const context = (error as { context?: unknown } | null)?.context
   if (context && typeof context === 'object' && 'text' in context) {
@@ -205,6 +219,99 @@ export const registrationService = {
       amount: Number(registration.registration_fee ?? 0),
       currency: 'PHP',
     }
+  },
+
+  async getRegistrationCertificateData(registrationId: string): Promise<RegistrationCertificateData | null> {
+    const { data: registration, error: registrationError } = await supabase
+      .from('registration_forms')
+      .select('id, event_id, bib_number, registrant_email, status')
+      .eq('id', registrationId)
+      .maybeSingle()
+    if (registrationError) throw registrationError
+    if (!registration) return null
+
+    const [{ data: rider, error: riderError }, { data: event, error: eventError }, { data: order, error: orderError }] =
+      await Promise.all([
+        supabase
+          .from('registration_rider_details')
+          .select('first_name, last_name, age_category, discipline')
+          .eq('registration_id', registrationId)
+          .maybeSingle(),
+        supabase.from('events').select('title, race_type').eq('id', registration.event_id).maybeSingle(),
+        supabase
+          .from('payment_orders')
+          .select('id, status, paid_at, created_at')
+          .eq('registration_id', registrationId)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+      ])
+
+    if (riderError) throw riderError
+    if (eventError) throw eventError
+    if (orderError) throw orderError
+
+    let txStatus: string | null = null
+    let txPaidAt: string | null = null
+    if (order?.id) {
+      const { data: tx, error: txError } = await supabase
+        .from('payment_transactions')
+        .select('status, paid_at, created_at')
+        .eq('payment_order_id', order.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (txError) throw txError
+      txStatus = tx?.status ?? null
+      txPaidAt = tx?.paid_at ?? null
+    }
+
+    const riderName = [rider?.first_name, rider?.last_name].filter(Boolean).join(' ').trim() || 'Registered Rider'
+    const category = String(rider?.age_category ?? 'Open Category')
+    const discipline = String(rider?.discipline ?? event?.race_type ?? 'Cycling')
+    const bibNumber = String(registration.bib_number ?? '').trim() || registration.id.slice(0, 8).toUpperCase()
+    const paymentStatus = String(txStatus ?? order?.status ?? registration.status ?? 'pending')
+    const normalizedStatus = paymentStatus.toLowerCase()
+    const isPaid = normalizedStatus === 'paid'
+
+    return {
+      registrationId: registration.id,
+      riderName,
+      category,
+      discipline,
+      bibNumber,
+      eventTitle: String(event?.title ?? 'Hari ng Ahon'),
+      registrantEmail: String(registration.registrant_email ?? ''),
+      qrValue: `HNA|${registration.id}|${bibNumber}`,
+      paymentStatus,
+      isPaid,
+      paidAt: txPaidAt ?? order?.paid_at ?? null,
+    }
+  },
+
+  async queueCertificateEmail(args: {
+    registrationId: string
+    recipient: string
+    subject: string
+  }) {
+    const recipient = args.recipient.trim()
+    if (!recipient) throw new Error('Missing recipient email.')
+    const { data: authData } = await supabase.auth.getSession()
+    const userId = authData.session?.user?.id ?? null
+    const { error } = await supabase.from('notification_deliveries').insert({
+      user_id: userId,
+      registration_id: args.registrationId,
+      channel: 'email',
+      recipient,
+      subject: args.subject,
+      payload: {
+        type: 'registration_certificate',
+        registration_id: args.registrationId,
+      },
+      status: 'queued',
+      created_at: new Date().toISOString(),
+    })
+    if (error) throw error
   },
 
   // agreements handled inside public-create-payment
