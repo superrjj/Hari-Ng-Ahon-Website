@@ -6,7 +6,6 @@ import {
   ClipboardList,
   CreditCard,
   FileBarChart,
-  Hash,
   Megaphone,
   QrCode,
   Settings,
