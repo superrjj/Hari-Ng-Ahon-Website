@@ -117,14 +117,15 @@ Deno.serve(async (req) => {
 
   if (existingRegistrationError) return textResponse(existingRegistrationError.message, 500)
   if (existingRegistration?.id) {
-    if (effectiveFee && ['draft', 'pending_payment', 'payment_processing'].includes(existingRegistration.status)) {
+    if (['draft', 'pending_payment', 'payment_processing'].includes(existingRegistration.status)) {
+      const formUpdatePayload: Record<string, unknown> = {
+        race_category_id: resolvedRaceCategoryId,
+        updated_at: new Date().toISOString(),
+      }
+      if (effectiveFee) formUpdatePayload.registration_fee = effectiveFee
       const { error: feeUpdateError } = await supabase
         .from('registration_forms')
-        .update({
-          registration_fee: effectiveFee,
-          race_category_id: resolvedRaceCategoryId,
-          updated_at: new Date().toISOString(),
-        })
+        .update(formUpdatePayload)
         .eq('id', existingRegistration.id)
       if (feeUpdateError) return textResponse(feeUpdateError.message, 500)
       const { error: riderUpdateError } = await supabase

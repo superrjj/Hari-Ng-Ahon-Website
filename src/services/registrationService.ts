@@ -65,6 +65,18 @@ function extractBibSequence(bibNumber: string, prefix: string) {
   return Number.isFinite(n) ? n : 0
 }
 
+function normalizeEventType(raw: string | null | undefined) {
+  const first = String(raw ?? '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)[0]
+  if (!first) return 'Criterium'
+  return first
+    .split(/[_-]/)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ')
+}
+
 export const registrationService = {
   async createRegistration(args: {
     raceType: RegistrationEventKey
@@ -388,7 +400,7 @@ export const registrationService = {
     const riderName = [rider?.first_name, rider?.last_name].filter(Boolean).join(' ').trim() || 'Registered Rider'
     const category = String(rider?.age_category ?? raceCategory?.category_name ?? 'Open Category')
     const discipline = String(rider?.discipline ?? event?.race_type ?? 'Cycling')
-    const eventType = String(event?.race_type ?? 'Criterium')
+    const eventType = normalizeEventType(event?.race_type)
     const bibNumber = String(registration.bib_number ?? '').trim() || `${String(raceCategory?.code ?? '00').trim()}00`
     const paymentStatus = String(txStatus ?? order?.status ?? registration.status ?? 'pending')
     const normalizedStatus = paymentStatus.toLowerCase()
