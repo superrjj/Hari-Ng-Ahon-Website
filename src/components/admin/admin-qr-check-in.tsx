@@ -20,12 +20,9 @@ type ScanResult = {
   category?: string
   bibNumber?: string
   eventTitle?: string
+  eventId?: string
   registrationId?: string
   scannedAt: string
-}
-
-function isUuid(value: string) {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
 }
 
 function extractBibFromCode(code: string) {
@@ -73,32 +70,12 @@ export function AdminQrCheckIn() {
     lastScanRef.current = code
     setProcessing(true)
     try {
-      const { data: duplicate } = await supabase.from('qr_checkins').select('id').eq('scanned_code', lookupCode).limit(1).maybeSingle()
-
-      if (duplicate?.id) {
-        setScanResult({
-          status: 'duplicate',
-          message: 'This code has already been checked in.',
-          code,
-          scannedAt: new Date().toISOString(),
-        })
-        setClaimDialogOpen(false)
-        return
-      }
-
-      let registrationQuery = supabase
+      const { data: registration, error: regError } = await supabase
         .from('registration_forms')
         .select('id, bib_number, status, event_id')
         .eq('bib_number', lookupCode)
         .limit(1)
-      if (isUuid(lookupCode)) {
-        registrationQuery = supabase
-          .from('registration_forms')
-          .select('id, bib_number, status, event_id')
-          .or(`id.eq.${lookupCode},bib_number.eq.${lookupCode}`)
-          .limit(1)
-      }
-      const { data: registration, error: regError } = await registrationQuery.maybeSingle()
+        .maybeSingle()
       if (regError) throw regError
 
       if (!registration?.id) {
@@ -133,6 +110,7 @@ export function AdminQrCheckIn() {
         category: rider?.age_category ?? 'Uncategorized',
         bibNumber,
         eventTitle: event?.title ?? 'Current event',
+        eventId: registration.event_id ? String(registration.event_id) : undefined,
         registrationId: registration.id,
         scannedAt: new Date().toISOString(),
       })
@@ -211,14 +189,19 @@ export function AdminQrCheckIn() {
   }, [data?.scans])
 
   const handleClaimKit = useCallback(async () => {
-    if (!scanResult || scanResult.status !== 'valid' || !scanResult.registrationId) return
+    if (!scanResult || scanResult.status !== 'valid' || !scanResult.registrationId || !scanResult.eventId) return
     setClaimingKit(true)
     try {
+      const { data: authData } = await supabase.auth.getSession()
+      const scannedBy = authData.session?.user?.id ?? null
+
       const { error: insertError } = await supabase.from('qr_checkins').insert({
+        event_id: scanResult.eventId,
         registration_id: scanResult.registrationId,
         scanned_code: scanResult.code,
         scan_status: 'valid',
         scanned_at: new Date().toISOString(),
+        scanned_by: scannedBy,
         device_label: navigator.userAgent.includes('Mobile') ? 'Mobile Scanner' : 'Web Scanner',
       })
       if (insertError) throw insertError
