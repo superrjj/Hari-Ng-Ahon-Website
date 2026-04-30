@@ -20,6 +20,7 @@ export function RegistrationPaymentSuccess() {
   const [certificateData, setCertificateData] = useState<RegistrationCertificateData | null>(null)
   const [checkingStatus, setCheckingStatus] = useState(false)
   const [certificatePreviewUrl, setCertificatePreviewUrl] = useState<string | null>(null)
+  const [autoEmailMessage, setAutoEmailMessage] = useState<string | null>(null)
 
   const statusLabel = useMemo(() => {
     if (!certificateData) return null
@@ -193,6 +194,32 @@ export function RegistrationPaymentSuccess() {
     }
   }, [certificateData, createCertificateDataUrl])
 
+  useEffect(() => {
+    let active = true
+    async function queueAutoEmail() {
+      if (!certificateData?.isPaid || !certificateData.registrantEmail) return
+      const dedupeKey = `cert-email-queued:${certificateData.registrationId}`
+      if (window.localStorage.getItem(dedupeKey) === '1') return
+      try {
+        const result = await registrationService.queueCertificateEmail({
+          registrationId: certificateData.registrationId,
+          recipient: certificateData.registrantEmail,
+          subject: `Your Hari ng Ahon QR Certificate (${certificateData.bibNumber})`,
+        })
+        if (!active) return
+        window.localStorage.setItem(dedupeKey, '1')
+        setAutoEmailMessage(result.queued ? 'A copy was automatically queued to your email.' : 'Certificate email is already queued.')
+      } catch {
+        if (!active) return
+        setAutoEmailMessage('Auto email queue failed. Please contact support if email is not received.')
+      }
+    }
+    void queueAutoEmail()
+    return () => {
+      active = false
+    }
+  }, [certificateData])
+
   return (
     <section className="bg-white px-4 py-10 text-slate-900">
       <div className="mx-auto max-w-[760px] space-y-6">
@@ -269,6 +296,7 @@ export function RegistrationPaymentSuccess() {
                   Download QR Certificate
                 </button>
               </div>
+              {autoEmailMessage ? <p className="text-sm text-slate-600">{autoEmailMessage}</p> : null}
             </div>
           ) : null}
         </div>

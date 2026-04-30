@@ -1,6 +1,6 @@
 import { BrowserMultiFormatReader } from '@zxing/browser'
 import { BarcodeFormat, DecodeHintType, NotFoundException } from '@zxing/library'
-import { Zap } from 'lucide-react'
+import { RefreshCw, Zap } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { supabase } from '../../lib/supabase'
@@ -42,6 +42,7 @@ export function AdminQrCheckIn() {
   const scanLockRef = useRef(false)
   const lastScanRef = useRef<string>('')
   const [processing, setProcessing] = useState(false)
+  const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment')
   const [cameraError, setCameraError] = useState<string | null>(null)
   const [torchOn, setTorchOn] = useState(false)
   const [scanResult, setScanResult] = useState<ScanResult | null>(null)
@@ -146,16 +147,62 @@ export function AdminQrCheckIn() {
       const videoElement = videoRef.current
       if (!videoElement) return
 
+      // Always trigger camera permission prompt first.
+      const permissionStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: facingMode } },
+        audio: false,
+      })
+      permissionStream.getTracks().forEach((track) => track.stop())
+
       const hints = new Map()
       hints.set(DecodeHintType.POSSIBLE_FORMATS, [BarcodeFormat.QR_CODE])
       const reader = new BrowserMultiFormatReader(hints)
       readerRef.current = reader
       setCameraError(null)
 
-      const controls = (await reader.decodeFromConstraints(
+      let controls: ScannerControls | null = null
+      try {
+        controls = (await reader.decodeFromConstraints(
+          {
+            video: {
+              facingMode: { ideal: facingMode },
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
+            },
+            audio: false,
+          },
+          videoElement,
+          (result, decodeError) => {
+            if (result) void processCode(result.getText())
+            if (decodeError && !(decodeError instanceof NotFoundException)) {
+              console.error(decodeError)
+            }
+          },
+        )) as ScannerControls
+      } catch {
+        // Fallback to any available camera when preferred facing mode fails.
+        controls = (await reader.decodeFromConstraints(
+          {
+            video: {
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
+            },
+            audio: false,
+          },
+          videoElement,
+          (result, decodeError) => {
+            if (result) void processCode(result.getText())
+            if (decodeError && !(decodeError instanceof NotFoundException)) {
+              console.error(decodeError)
+            }
+          },
+        )) as ScannerControls
+      }
+
+      const finalControls = controls ?? ((await reader.decodeFromConstraints(
         {
           video: {
-            facingMode: { ideal: 'environment' },
+            facingMode: { ideal: facingMode },
             width: { ideal: 1280 },
             height: { ideal: 720 },
           },
@@ -168,16 +215,16 @@ export function AdminQrCheckIn() {
             console.error(decodeError)
           }
         },
-      )) as ScannerControls
+      )) as ScannerControls)
 
-      controlsRef.current = controls
+      controlsRef.current = finalControls
     } catch (scannerError) {
       const message = (scannerError as Error).message || 'Unable to open camera.'
       setCameraError(message)
       toast.error(message)
       stopCamera()
     }
-  }, [processCode, stopCamera])
+  }, [facingMode, processCode, stopCamera])
 
   const toggleTorch = useCallback(async () => {
     try {
@@ -357,6 +404,15 @@ export function AdminQrCheckIn() {
               </button>
               <p className="text-center text-sm font-medium text-slate-100">Scan rider QR to claim race kit</p>
               <div className="h-8 w-8" />
+              <button
+                type="button"
+                onClick={() => setFacingMode((mode) => (mode === 'environment' ? 'user' : 'environment'))}
+                aria-label="Switch camera"
+                title="Switch Camera"
+                className="rounded-full bg-slate-800 p-2 text-slate-100 hover:bg-slate-700"
+              >
+                <RefreshCw className="h-4 w-4 text-slate-200" />
+              </button>
             </div>
 
             <div className="relative h-[380px] w-full bg-slate-900 md:h-[460px]">

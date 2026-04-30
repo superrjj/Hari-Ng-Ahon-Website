@@ -431,6 +431,21 @@ export const registrationService = {
     if (!recipient) throw new Error('Missing recipient email.')
     const { data: authData } = await supabase.auth.getSession()
     const userId = authData.session?.user?.id ?? null
+    const { data: existingDelivery, error: existingDeliveryError } = await supabase
+      .from('notification_deliveries')
+      .select('id, status')
+      .eq('registration_id', args.registrationId)
+      .eq('channel', 'email')
+      .eq('recipient', recipient)
+      .eq('payload->>type', 'registration_certificate')
+      .in('status', ['queued', 'processing', 'sent'])
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (existingDeliveryError) throw existingDeliveryError
+    if (existingDelivery?.id) {
+      return { queued: false, reason: 'already_queued' as const }
+    }
     const { error } = await supabase.from('notification_deliveries').insert({
       user_id: userId,
       registration_id: args.registrationId,
@@ -445,6 +460,7 @@ export const registrationService = {
       created_at: new Date().toISOString(),
     })
     if (error) throw error
+    return { queued: true as const }
   },
 
   // agreements handled inside public-create-payment
