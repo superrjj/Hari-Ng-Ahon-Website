@@ -141,7 +141,19 @@ export function RegistrationPaymentSuccess() {
         }
       }
 
-      drawLabelValue('BIB NUMBER', certificateData.bibNumber, 58, 412, '900 60px Arial')
+      // Dedicated bib-number block for stronger hierarchy and cleaner spacing.
+      drawRoundedRect(ctx, 56, 392, 280, 118, 18)
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.72)'
+      ctx.fill()
+      ctx.strokeStyle = 'rgba(203, 213, 225, 0.9)'
+      ctx.lineWidth = 1.5
+      ctx.stroke()
+      ctx.fillStyle = '#475569'
+      ctx.font = '700 18px Arial'
+      ctx.fillText('BIB NUMBER', 78, 432)
+      ctx.fillStyle = '#0f172a'
+      ctx.font = '900 74px Arial'
+      ctx.fillText(certificateData.bibNumber, 76, 495)
       drawLabelValue('CATEGORY', certificateData.category, 58, 500, '700 34px Arial', 480)
       drawLabelValue('DISCIPLINE', certificateData.discipline, 560, 500, '700 34px Arial', 230)
       drawLabelValue('EVENT TYPE', certificateData.eventType, 58, 592, '700 30px Arial', 680)

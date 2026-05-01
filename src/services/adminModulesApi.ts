@@ -171,23 +171,64 @@ export const adminModulesApi = {
     ])
     if (error) throw error
     const registrationIds = Array.from(new Set((scans ?? []).map((item) => String(item.registration_id ?? '')).filter(Boolean)))
-    let riderNameByRegistration = new Map<string, string>()
+    let riderByRegistration = new Map<
+      string,
+      { rider_name: string; discipline: string; category: string }
+    >()
+    let registrationById = new Map<string, { event_id: string | null }>()
+    let eventById = new Map<string, { title: string; race_type: string }>()
     if (registrationIds.length > 0) {
-      const { data: riders, error: riderError } = await supabase
-        .from('registration_rider_details')
-        .select('registration_id, first_name, last_name')
-        .in('registration_id', registrationIds)
+      const [{ data: riders, error: riderError }, { data: registrations, error: registrationError }] = await Promise.all([
+        supabase
+          .from('registration_rider_details')
+          .select('registration_id, first_name, last_name, discipline, age_category')
+          .in('registration_id', registrationIds),
+        supabase
+          .from('registration_forms')
+          .select('id, event_id')
+          .in('id', registrationIds),
+      ])
       if (riderError) throw riderError
-      riderNameByRegistration = new Map(
+      if (registrationError) throw registrationError
+
+      riderByRegistration = new Map(
         (riders ?? []).map((rider) => [
           String(rider.registration_id),
-          [rider.first_name, rider.last_name].filter(Boolean).join(' ').trim() || 'Registered rider',
+          {
+            rider_name: [rider.first_name, rider.last_name].filter(Boolean).join(' ').trim() || 'Registered rider',
+            discipline: String(rider.discipline ?? '—'),
+            category: String(rider.age_category ?? '—'),
+          },
         ]),
       )
+
+      registrationById = new Map(
+        (registrations ?? []).map((registration) => [String(registration.id), { event_id: registration.event_id ? String(registration.event_id) : null }]),
+      )
+
+      const eventIds = Array.from(
+        new Set((registrations ?? []).map((registration) => String(registration.event_id ?? '')).filter(Boolean)),
+      )
+      if (eventIds.length > 0) {
+        const { data: events, error: eventError } = await supabase
+          .from('events')
+          .select('id, title, race_type')
+          .in('id', eventIds)
+        if (eventError) throw eventError
+        eventById = new Map(
+          (events ?? []).map((event) => [String(event.id), { title: String(event.title ?? 'Current event'), race_type: String(event.race_type ?? '—') }]),
+        )
+      }
     }
     const scansWithRider = (scans ?? []).map((scan) => ({
       ...scan,
-      rider_name: riderNameByRegistration.get(String(scan.registration_id ?? '')) ?? 'Registered rider',
+      rider_name: riderByRegistration.get(String(scan.registration_id ?? ''))?.rider_name ?? 'Registered rider',
+      discipline: riderByRegistration.get(String(scan.registration_id ?? ''))?.discipline ?? '—',
+      category: riderByRegistration.get(String(scan.registration_id ?? ''))?.category ?? '—',
+      event_type:
+        eventById.get(String(registrationById.get(String(scan.registration_id ?? ''))?.event_id ?? ''))?.race_type ?? '—',
+      event_title:
+        eventById.get(String(registrationById.get(String(scan.registration_id ?? ''))?.event_id ?? ''))?.title ?? 'Current event',
     }))
     return {
       scans: scansWithRider as Array<Record<string, unknown>>,

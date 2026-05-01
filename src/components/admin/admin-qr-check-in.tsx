@@ -18,6 +18,8 @@ type ScanResult = {
   code: string
   riderName?: string
   category?: string
+  discipline?: string
+  eventType?: string
   bibNumber?: string
   eventTitle?: string
   eventId?: string
@@ -76,6 +78,7 @@ export function AdminQrCheckIn() {
   const [claimDialogOpen, setClaimDialogOpen] = useState(false)
   const [claimingKit, setClaimingKit] = useState(false)
   const [duplicateDialogOpen, setDuplicateDialogOpen] = useState(false)
+  const [historySearch, setHistorySearch] = useState('')
 
   const stopCamera = useCallback(() => {
     controlsRef.current?.stop()
@@ -134,11 +137,11 @@ export function AdminQrCheckIn() {
       const [{ data: rider }, { data: event }] = await Promise.all([
         supabase
           .from('registration_rider_details')
-          .select('first_name, last_name, age_category')
+          .select('first_name, last_name, age_category, discipline')
           .eq('registration_id', registration.id)
           .limit(1)
           .maybeSingle(),
-        supabase.from('events').select('title').eq('id', String(registration.event_id ?? '')).limit(1).maybeSingle(),
+        supabase.from('events').select('title, race_type').eq('id', String(registration.event_id ?? '')).limit(1).maybeSingle(),
       ])
 
       const riderName = [rider?.first_name, rider?.last_name].filter(Boolean).join(' ').trim() || 'Registered rider'
@@ -150,6 +153,8 @@ export function AdminQrCheckIn() {
         code: lookupCode,
         riderName,
         category: rider?.age_category ?? 'Uncategorized',
+        discipline: rider?.discipline ?? '—',
+        eventType: String(event?.race_type ?? '—'),
         bibNumber,
         eventTitle: event?.title ?? 'Current event',
         eventId: registration.event_id ? String(registration.event_id) : undefined,
@@ -295,6 +300,23 @@ export function AdminQrCheckIn() {
   }, [startCamera])
 
   const historyRows = useMemo(() => data?.scans ?? [], [data?.scans])
+  const filteredHistoryRows = useMemo(() => {
+    const query = historySearch.trim().toLowerCase()
+    if (!query) return historyRows
+    return historyRows.filter((row) => {
+      const haystack = [
+        String(row.scanned_code ?? ''),
+        String(row.rider_name ?? ''),
+        String(row.discipline ?? ''),
+        String(row.category ?? ''),
+        String(row.event_type ?? ''),
+        String(row.scan_status ?? ''),
+      ]
+        .join(' ')
+        .toLowerCase()
+      return haystack.includes(query)
+    })
+  }, [historyRows, historySearch])
 
   const handleClaimKit = useCallback(async () => {
     if (!scanResult || scanResult.status !== 'valid' || !scanResult.registrationId || !scanResult.eventId) return
@@ -378,6 +400,14 @@ export function AdminQrCheckIn() {
               <div className="flex items-center justify-between gap-3 text-sm">
                 <p className="text-slate-500">Bib Number</p>
                 <p className="font-semibold text-slate-900">{scanResult.bibNumber ?? scanResult.code}</p>
+              </div>
+              <div className="flex items-center justify-between gap-3 text-sm">
+                <p className="text-slate-500">Discipline</p>
+                <p className="font-semibold text-slate-900">{scanResult.discipline ?? '—'}</p>
+              </div>
+              <div className="flex items-center justify-between gap-3 text-sm">
+                <p className="text-slate-500">Event Type</p>
+                <p className="font-semibold text-slate-900">{scanResult.eventType ?? '—'}</p>
               </div>
               <div className="flex items-center justify-between gap-3 text-sm">
                 <p className="text-slate-500">Event</p>
@@ -492,24 +522,39 @@ export function AdminQrCheckIn() {
       </SectionCard>
 
       <SectionCard title="QR Scan History" subtitle="Venue scans, rider, validation result, and timestamp.">
-        {historyRows.length === 0 ? (
+        <div className="mb-3">
+          <input
+            type="text"
+            value={historySearch}
+            onChange={(event) => setHistorySearch(event.target.value)}
+            placeholder="Search code, rider, discipline, category, event type..."
+            className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-[#cfae3f]"
+          />
+        </div>
+        {filteredHistoryRows.length === 0 ? (
           <p className="text-sm text-slate-500">No scan history yet.</p>
         ) : (
           <div className="-mx-2 overflow-x-auto px-2 sm:mx-0 sm:px-0">
-            <table className="min-w-[640px] w-full divide-y divide-slate-200 text-xs sm:text-sm">
+            <table className="min-w-[900px] w-full divide-y divide-slate-200 text-xs sm:text-sm">
               <thead className="bg-slate-50">
                 <tr>
                   <th className="px-2 py-2 text-left font-semibold text-slate-600 sm:px-3">Code</th>
                   <th className="px-2 py-2 text-left font-semibold text-slate-600 sm:px-3">Rider</th>
+                  <th className="px-2 py-2 text-left font-semibold text-slate-600 sm:px-3">Discipline</th>
+                  <th className="px-2 py-2 text-left font-semibold text-slate-600 sm:px-3">Category</th>
+                  <th className="px-2 py-2 text-left font-semibold text-slate-600 sm:px-3">Event Type</th>
                   <th className="px-2 py-2 text-left font-semibold text-slate-600 sm:px-3">Status</th>
                   <th className="px-2 py-2 text-left font-semibold text-slate-600 sm:px-3">Scanned At</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 bg-white">
-                {historyRows.map((row, index) => (
+                {filteredHistoryRows.map((row, index) => (
                   <tr key={String(row.id ?? index)}>
                     <td className="px-2 py-2 text-slate-700 sm:px-3">{String(row.scanned_code ?? '—')}</td>
                     <td className="px-2 py-2 text-slate-700 sm:px-3">{String(row.rider_name ?? 'Registered rider')}</td>
+                    <td className="px-2 py-2 text-slate-700 sm:px-3">{String(row.discipline ?? '—')}</td>
+                    <td className="px-2 py-2 text-slate-700 sm:px-3">{String(row.category ?? '—')}</td>
+                    <td className="px-2 py-2 text-slate-700 sm:px-3">{String(row.event_type ?? '—')}</td>
                     <td className="px-2 py-2 sm:px-3">
                       <span className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusBadgeClass(row.scan_status)}`}>
                         {formatScanStatusLabel(row.scan_status)}
