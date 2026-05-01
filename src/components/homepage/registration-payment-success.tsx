@@ -1,5 +1,5 @@
 import QRCode from 'qrcode'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { registrationService, type RegistrationCertificateData } from '../../services/registrationService'
 
@@ -44,12 +44,6 @@ export function RegistrationPaymentSuccess() {
   const [certificatePreviewUrl, setCertificatePreviewUrl] = useState<string | null>(null)
   const [autoEmailMessage, setAutoEmailMessage] = useState<string | null>(null)
 
-  const statusLabel = useMemo(() => {
-    if (!certificateData) return null
-    if (certificateData.isPaid) return 'PAID'
-    return `Pending (${certificateData.paymentStatus})`
-  }, [certificateData])
-
   const createCertificateDataUrl = useCallback(
     async (mimeType: 'image/png' | 'image/jpeg') => {
       if (!certificateData) throw new Error('Certificate data is not ready yet.')
@@ -58,6 +52,10 @@ export function RegistrationPaymentSuccess() {
       canvas.height = 720
       const ctx = canvas.getContext('2d')
       if (!ctx) throw new Error('Unable to initialize certificate canvas.')
+      const [allOutLogo, hnaLogo] = await Promise.all([
+        loadImage('/all_out_multisports_1.png').catch(() => null),
+        loadImage('/hna-logo.png').catch(() => null),
+      ])
 
       const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height)
       gradient.addColorStop(0, '#f8fafc')
@@ -97,34 +95,53 @@ export function RegistrationPaymentSuccess() {
       ctx.fillStyle = '#001B44'
       ctx.font = '700 46px Arial'
       ctx.fillText('HARI NG AHON', 58, 96)
-      ctx.fillStyle = '#0B5ED7'
-      ctx.font = '700 28px Arial'
-      ctx.fillText('CYCLING EVENT CREDENTIAL', 58, 130)
+      ctx.fillStyle = '#334155'
+      ctx.font = '600 26px Arial'
+      ctx.fillText('RACE CERTIFICATE', 58, 132)
+
+      if (allOutLogo) {
+        ctx.drawImage(allOutLogo, 38, 30, 255, 78)
+      }
+      if (hnaLogo) {
+        ctx.drawImage(hnaLogo, 304, 28, 72, 72)
+      }
 
       ctx.fillStyle = '#64748b'
-      ctx.font = '700 16px Arial'
-      ctx.fillText('RIDER NAME', 58, 196)
+      ctx.font = '700 15px Arial'
+      ctx.fillText('RIDER NAME', 58, 194)
       ctx.fillStyle = '#111827'
-      ctx.font = '700 56px Arial'
-      ctx.fillText(certificateData.riderName, 58, 252)
+      ctx.font = '700 58px Arial'
+      ctx.fillText(certificateData.riderName, 58, 250)
 
       ctx.fillStyle = '#1e3a8a'
-      ctx.font = '700 28px Arial'
-      ctx.fillText(certificateData.eventTitle, 58, 298)
+      ctx.font = '700 30px Arial'
+      ctx.fillText(certificateData.eventTitle, 58, 302)
 
-      const drawLabelValue = (label: string, value: string, x: number, y: number, valueFont = '700 36px Arial') => {
+      const drawLabelValue = (
+        label: string,
+        value: string,
+        x: number,
+        y: number,
+        valueFont = '700 36px Arial',
+        maxWidth?: number,
+      ) => {
         ctx.fillStyle = '#475569'
         ctx.font = '700 15px Arial'
         ctx.fillText(label, x, y)
         ctx.fillStyle = '#0f172a'
         ctx.font = valueFont
-        ctx.fillText(value, x, y + 45)
+        if (typeof maxWidth === 'number') {
+          ctx.fillText(value, x, y + 42, maxWidth)
+        } else {
+          ctx.fillText(value, x, y + 42)
+        }
       }
 
-      drawLabelValue('BIB NUMBER', certificateData.bibNumber, 58, 358, '900 62px Arial')
-      drawLabelValue('CATEGORY', certificateData.category, 58, 470)
-      drawLabelValue('DISCIPLINE', certificateData.discipline, 360, 470)
-      drawLabelValue('EVENT TYPE', certificateData.eventType, 58, 578, '700 28px Arial')
+      drawLabelValue('BIB NUMBER', certificateData.bibNumber, 58, 358, '900 60px Arial')
+      drawLabelValue('CATEGORY CODE', certificateData.categoryCode, 360, 358, '800 38px Arial')
+      drawLabelValue('CATEGORY', certificateData.category, 58, 468, '700 34px Arial', 480)
+      drawLabelValue('DISCIPLINE', certificateData.discipline, 560, 468, '700 34px Arial', 230)
+      drawLabelValue('EVENT TYPE', certificateData.eventType, 58, 572, '700 30px Arial', 680)
 
       const qrDataUrl = await QRCode.toDataURL(certificateData.qrValue, {
         width: 360,
@@ -155,13 +172,9 @@ export function RegistrationPaymentSuccess() {
       ctx.fillStyle = '#475569'
       ctx.font = '600 18px Arial'
       ctx.fillText(certificateData.verificationId, qrCardX + 54, qrCardY + 454)
-
-      drawRoundedRect(ctx, qrCardX + 42, qrCardY + 468, qrCardWidth - 84, 44, 18)
-      ctx.fillStyle = certificateData.isPaid ? '#0B5ED7' : '#9ca3af'
-      ctx.fill()
-      ctx.fillStyle = '#ffffff'
-      ctx.font = '700 20px Arial'
-      ctx.fillText(certificateData.isPaid ? 'PAYMENT VERIFIED' : 'PAYMENT PENDING', qrCardX + 92, qrCardY + 497)
+      ctx.fillStyle = '#64748b'
+      ctx.font = '700 16px Arial'
+      ctx.fillText(`CAT CODE: ${certificateData.categoryCode}`, qrCardX + 54, qrCardY + 486)
 
       const fileType = mimeType === 'image/png' ? 'image/png' : 'image/jpeg'
       return canvas.toDataURL(fileType, 0.92)
@@ -379,7 +392,7 @@ export function RegistrationPaymentSuccess() {
                   Discipline: <span className="font-semibold text-slate-900">{certificateData.discipline}</span>
                 </p>
                 <p>
-                  Payment: <span className={`font-semibold ${certificateData.isPaid ? 'text-emerald-700' : 'text-amber-700'}`}>{statusLabel}</span>
+                  Category Code: <span className="font-semibold text-slate-900">{certificateData.categoryCode}</span>
                 </p>
                 <p>
                   Event Type: <span className="font-semibold text-slate-900">{certificateData.eventType}</span>

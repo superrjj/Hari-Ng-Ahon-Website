@@ -24,6 +24,7 @@ export type RegistrationCertificateData = {
   registrationId: string
   riderName: string
   category: string
+  categoryCode: string
   discipline: string
   eventType: string
   bibNumber: string
@@ -435,6 +436,7 @@ export const registrationService = {
     const qrPayload = {
       registration_id: verificationId,
       bib_number: bibNumber,
+      category_code: categoryCode,
       rider_name: riderName,
       event_id: String(event?.id ?? registration.event_id ?? ''),
       verification_token: verificationToken,
@@ -444,6 +446,7 @@ export const registrationService = {
       registrationId: registration.id,
       riderName,
       category,
+      categoryCode,
       discipline,
       eventType,
       bibNumber,
