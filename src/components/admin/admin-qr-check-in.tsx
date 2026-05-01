@@ -43,6 +43,17 @@ function statusBadgeClass(value: unknown) {
 
 function extractBibFromCode(code: string) {
   const trimmed = code.trim()
+  if (!trimmed) return ''
+  // New certificates encode a JSON payload.
+  if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+    try {
+      const parsed = JSON.parse(trimmed) as { bib_number?: unknown; bibNumber?: unknown }
+      const payloadBib = String(parsed.bib_number ?? parsed.bibNumber ?? '').trim()
+      if (payloadBib) return payloadBib
+    } catch {
+      // Fall back to legacy formats below.
+    }
+  }
   const match = trimmed.match(/BIB:([^|]+)/i)
   if (match?.[1]) return match[1].trim()
   return trimmed
