@@ -117,7 +117,8 @@ Deno.serve(async (req) => {
 
   if (existingRegistrationError) return textResponse(existingRegistrationError.message, 500)
   if (existingRegistration?.id) {
-    if (['draft', 'pending_payment', 'payment_processing'].includes(existingRegistration.status)) {
+    const reusableStatuses = ['draft', 'pending_payment', 'payment_processing']
+    if (reusableStatuses.includes(existingRegistration.status)) {
       const formUpdatePayload: Record<string, unknown> = {
         race_category_id: resolvedRaceCategoryId,
         updated_at: new Date().toISOString(),
@@ -137,8 +138,18 @@ Deno.serve(async (req) => {
         })
         .eq('registration_id', existingRegistration.id)
       if (riderUpdateError) return textResponse(riderUpdateError.message, 500)
+      return Response.json({ registrationId: existingRegistration.id, reused: true }, { headers: corsHeaders })
     }
-    return Response.json({ registrationId: existingRegistration.id, reused: true }, { headers: corsHeaders })
+    if (['paid', 'confirmed', 'checked_in'].includes(existingRegistration.status)) {
+      return textResponse(
+        JSON.stringify({
+          code: 'REGISTRATION_ALREADY_PAID',
+          message: 'This account already has a paid registration for the selected event.',
+          registrationId: existingRegistration.id,
+        }),
+        409,
+      )
+    }
   }
 
   const { data: form, error: formError } = await supabase
