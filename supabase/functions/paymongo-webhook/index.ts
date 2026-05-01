@@ -77,10 +77,10 @@ function normalizeStatus(paymongoStatus: string | undefined) {
 function normalizeRegistrationStatus(paymentStatus: string) {
   switch (paymentStatus) {
     case 'paid':
-      return 'paid'
+      return 'confirmed'
     case 'failed':
     case 'expired':
-      return 'pending_payment'
+      return 'draft'
     case 'processing':
     case 'pending':
     default:
@@ -138,8 +138,10 @@ async function assignBibIfMissing(registrationId: string) {
       `Category limit reached for ${String(raceCategory?.category_name ?? categoryCode)}. Max riders: ${riderLimit}.`,
     )
   }
-  const sequenceDigits = Math.max(2, String(Math.max(riderLimit, nextSequence)).length)
-  const nextBib = `${categoryCode}${String(nextSequence).padStart(sequenceDigits, '0')}`
+  if (nextSequence > 99) {
+    throw new Error(`Category bib sequence exceeded 2 digits for category code ${categoryCode}.`)
+  }
+  const nextBib = `${categoryCode}${String(nextSequence).padStart(2, '0')}`
 
   const { error: updateError } = await supabase
     .from('registration_forms')
@@ -248,10 +250,43 @@ Deno.serve(async (req: Request) => {
   }
 
   if (normalizedStatus === 'paid') {
+    const { data: registration, error: registrationLookupError } = await supabase
+      .from('registration_forms')
+      .select('id, user_id, event_id, race_category_id')
+      .eq('id', order.registration_id)
+      .maybeSingle()
+    if (registrationLookupError) {
+      return new Response(`Failed to load registration for confirmation: ${registrationLookupError.message}`, { status: 500 })
+    }
+    if (!registration?.id) {
+      return new Response('Registration not found for confirmation', { status: 404 })
+    }
+
+    // Confirmation-stage uniqueness guard:
+    // allow new attempts but block more than one confirmed entry per user+event+category.
+    if (registration.user_id && registration.event_id && registration.race_category_id) {
+      const { data: existingConfirmed, error: existingConfirmedError } = await supabase
+        .from('registration_forms')
+        .select('id')
+        .eq('user_id', registration.user_id)
+        .eq('event_id', registration.event_id)
+        .eq('race_category_id', registration.race_category_id)
+        .eq('status', 'confirmed')
+        .neq('id', registration.id)
+        .limit(1)
+        .maybeSingle()
+      if (existingConfirmedError) {
+        return new Response(`Failed to validate duplicate confirmation: ${existingConfirmedError.message}`, { status: 500 })
+      }
+      if (existingConfirmed?.id) {
+        return new Response('Duplicate confirmed registration exists for this account, event, and category.', { status: 409 })
+      }
+    }
+
     const { error: paidFinalizeError } = await supabase
       .from('registration_forms')
       .update({
-        status: 'paid',
+        status: 'confirmed',
         confirmed_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })

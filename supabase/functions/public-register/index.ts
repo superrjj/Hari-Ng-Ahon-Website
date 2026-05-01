@@ -38,6 +38,10 @@ type Body = {
   }
 }
 
+function createAttemptId() {
+  return `REGATT-${Date.now()}-${crypto.randomUUID()}`
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
   if (req.method !== 'POST') return textResponse('Method not allowed', 405)
@@ -104,53 +108,7 @@ Deno.serve(async (req) => {
     resolvedRaceCategoryId = raceCategory.id
   }
 
-  // Prevent duplicate-key failures on ux_registration_forms_email_event by reusing
-  // an existing public registration for the same email + event.
-  const { data: existingRegistration, error: existingRegistrationError } = await supabase
-    .from('registration_forms')
-    .select('id, status')
-    .eq('event_id', event.id)
-    .eq('user_id', userId)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-
-  if (existingRegistrationError) return textResponse(existingRegistrationError.message, 500)
-  if (existingRegistration?.id) {
-    const reusableStatuses = ['draft', 'pending_payment', 'payment_processing']
-    if (reusableStatuses.includes(existingRegistration.status)) {
-      const formUpdatePayload: Record<string, unknown> = {
-        race_category_id: resolvedRaceCategoryId,
-        updated_at: new Date().toISOString(),
-      }
-      if (effectiveFee) formUpdatePayload.registration_fee = effectiveFee
-      const { error: feeUpdateError } = await supabase
-        .from('registration_forms')
-        .update(formUpdatePayload)
-        .eq('id', existingRegistration.id)
-      if (feeUpdateError) return textResponse(feeUpdateError.message, 500)
-      const { error: riderUpdateError } = await supabase
-        .from('registration_rider_details')
-        .update({
-          age_category: body.rider.ageCategory ?? null,
-          discipline: body.rider.discipline ?? null,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('registration_id', existingRegistration.id)
-      if (riderUpdateError) return textResponse(riderUpdateError.message, 500)
-      return Response.json({ registrationId: existingRegistration.id, reused: true }, { headers: corsHeaders })
-    }
-    if (['paid', 'confirmed', 'checked_in'].includes(existingRegistration.status)) {
-      return textResponse(
-        JSON.stringify({
-          code: 'REGISTRATION_ALREADY_PAID',
-          message: 'This account already has a paid registration for the selected event.',
-          registrationId: existingRegistration.id,
-        }),
-        409,
-      )
-    }
-  }
+  const registrationAttemptId = createAttemptId()
 
   const { data: form, error: formError } = await supabase
     .from('registration_forms')
@@ -194,6 +152,6 @@ Deno.serve(async (req) => {
   })
   if (agreementError) return textResponse(agreementError.message, 500)
 
-  return Response.json({ registrationId: form.id }, { headers: corsHeaders })
+  return Response.json({ registrationId: form.id, registrationAttemptId }, { headers: corsHeaders })
 })
 

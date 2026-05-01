@@ -92,30 +92,34 @@ export function RegistrationPaymentSuccess() {
       ctx.closePath()
       ctx.fill()
 
-      ctx.fillStyle = '#001B44'
-      ctx.font = '700 46px Arial'
-      ctx.fillText('HARI NG AHON', 58, 96)
-      ctx.fillStyle = '#334155'
-      ctx.font = '600 26px Arial'
-      ctx.fillText('RACE CERTIFICATE', 58, 132)
-
+      const logoStartX = 56
+      const logoY = 42
+      const logoHeight = 32
+      let cursorX = logoStartX
       if (allOutLogo) {
-        ctx.drawImage(allOutLogo, 38, 30, 255, 78)
+        const allOutWidth = Math.round((allOutLogo.width / Math.max(allOutLogo.height, 1)) * logoHeight)
+        ctx.drawImage(allOutLogo, cursorX, logoY, allOutWidth, logoHeight)
+        cursorX += allOutWidth + 12
       }
       if (hnaLogo) {
-        ctx.drawImage(hnaLogo, 304, 28, 72, 72)
+        const hnaWidth = Math.round((hnaLogo.width / Math.max(hnaLogo.height, 1)) * logoHeight)
+        ctx.drawImage(hnaLogo, cursorX, logoY, hnaWidth, logoHeight)
       }
+
+      ctx.fillStyle = '#334155'
+      ctx.font = '600 24px Arial'
+      ctx.fillText('RACE CERTIFICATE', 56, 112)
 
       ctx.fillStyle = '#64748b'
       ctx.font = '700 15px Arial'
-      ctx.fillText('RIDER NAME', 58, 194)
+      ctx.fillText('RIDER NAME', 58, 236)
       ctx.fillStyle = '#111827'
       ctx.font = '700 58px Arial'
-      ctx.fillText(certificateData.riderName, 58, 250)
+      ctx.fillText(certificateData.riderName, 58, 292)
 
       ctx.fillStyle = '#1e3a8a'
       ctx.font = '700 30px Arial'
-      ctx.fillText(certificateData.eventTitle, 58, 302)
+      ctx.fillText(certificateData.eventTitle, 58, 344)
 
       const drawLabelValue = (
         label: string,
@@ -137,11 +141,10 @@ export function RegistrationPaymentSuccess() {
         }
       }
 
-      drawLabelValue('BIB NUMBER', certificateData.bibNumber, 58, 358, '900 60px Arial')
-      drawLabelValue('CATEGORY CODE', certificateData.categoryCode, 360, 358, '800 38px Arial')
-      drawLabelValue('CATEGORY', certificateData.category, 58, 468, '700 34px Arial', 480)
-      drawLabelValue('DISCIPLINE', certificateData.discipline, 560, 468, '700 34px Arial', 230)
-      drawLabelValue('EVENT TYPE', certificateData.eventType, 58, 572, '700 30px Arial', 680)
+      drawLabelValue('BIB NUMBER', certificateData.bibNumber, 58, 412, '900 60px Arial')
+      drawLabelValue('CATEGORY', certificateData.category, 58, 500, '700 34px Arial', 480)
+      drawLabelValue('DISCIPLINE', certificateData.discipline, 560, 500, '700 34px Arial', 230)
+      drawLabelValue('EVENT TYPE', certificateData.eventType, 58, 592, '700 30px Arial', 680)
 
       const qrDataUrl = await QRCode.toDataURL(certificateData.qrValue, {
         width: 360,
@@ -168,13 +171,12 @@ export function RegistrationPaymentSuccess() {
       ctx.drawImage(qrImage, qrCardX + 32, qrCardY + 44, 328, 328)
       ctx.fillStyle = '#111827'
       ctx.font = '800 36px Arial'
-      ctx.fillText(certificateData.bibNumber, qrCardX + 122, qrCardY + 424)
+      const bibWidth = ctx.measureText(certificateData.bibNumber).width
+      ctx.fillText(certificateData.bibNumber, qrCardX + (qrCardWidth - bibWidth) / 2, qrCardY + 424)
       ctx.fillStyle = '#475569'
       ctx.font = '600 18px Arial'
-      ctx.fillText(certificateData.verificationId, qrCardX + 54, qrCardY + 454)
-      ctx.fillStyle = '#64748b'
-      ctx.font = '700 16px Arial'
-      ctx.fillText(`CAT CODE: ${certificateData.categoryCode}`, qrCardX + 54, qrCardY + 486)
+      const regWidth = ctx.measureText(certificateData.verificationId).width
+      ctx.fillText(certificateData.verificationId, qrCardX + (qrCardWidth - regWidth) / 2, qrCardY + 454)
 
       const fileType = mimeType === 'image/png' ? 'image/png' : 'image/jpeg'
       return canvas.toDataURL(fileType, 0.92)
@@ -238,50 +240,6 @@ export function RegistrationPaymentSuccess() {
     },
     [certificateData, createCertificateDataUrl],
   )
-
-  const handleDownloadPdf = useCallback(async () => {
-    if (!certificateData) return
-    const imageUrl = await createCertificateDataUrl('image/png')
-    const win = window.open('', '_blank', 'noopener,noreferrer,width=1400,height=900')
-    if (!win) return
-    win.document.write(`
-      <html>
-        <head><title>Hari ng Ahon Certificate ${certificateData.bibNumber}</title></head>
-        <body style="margin:0;padding:16px;background:#f3f4f6;">
-          <img src="${imageUrl}" style="width:100%;max-width:1280px;display:block;margin:0 auto;border-radius:12px;" />
-          <script>window.onload = () => window.print()</script>
-        </body>
-      </html>
-    `)
-    win.document.close()
-  }, [certificateData, createCertificateDataUrl])
-
-  const handlePrintRaceBib = useCallback(async () => {
-    if (!certificateData) return
-    const qrDataUrl = await QRCode.toDataURL(certificateData.qrValue, {
-      width: 420,
-      margin: 1,
-      color: { dark: '#111827', light: '#ffffff' },
-    })
-    const win = window.open('', '_blank', 'noopener,noreferrer,width=900,height=900')
-    if (!win) return
-    win.document.write(`
-      <html>
-        <head><title>Race Bib ${certificateData.bibNumber}</title></head>
-        <body style="font-family:Arial,sans-serif;margin:0;padding:20px;background:white;">
-          <div style="width:720px;margin:0 auto;border:3px solid #001B44;border-radius:16px;padding:24px;text-align:center;">
-            <div style="font-size:22px;font-weight:700;color:#0B5ED7;letter-spacing:1px;">HARI NG AHON CYCLING EVENT</div>
-            <div style="font-size:90px;font-weight:900;color:#111827;line-height:1;margin:18px 0 6px;">${certificateData.bibNumber}</div>
-            <div style="font-size:24px;font-weight:700;color:#1f2937;margin-bottom:14px;">${certificateData.riderName}</div>
-            <img src="${qrDataUrl}" style="width:220px;height:220px;display:block;margin:0 auto 10px;" />
-            <div style="font-size:14px;color:#475569;">${certificateData.verificationId}</div>
-          </div>
-          <script>window.onload = () => window.print()</script>
-        </body>
-      </html>
-    `)
-    win.document.close()
-  }, [certificateData])
 
   const refreshPaymentStatus = useCallback(async () => {
     setCheckingStatus(true)
@@ -392,9 +350,6 @@ export function RegistrationPaymentSuccess() {
                   Discipline: <span className="font-semibold text-slate-900">{certificateData.discipline}</span>
                 </p>
                 <p>
-                  Category Code: <span className="font-semibold text-slate-900">{certificateData.categoryCode}</span>
-                </p>
-                <p>
                   Event Type: <span className="font-semibold text-slate-900">{certificateData.eventType}</span>
                 </p>
               </div>
@@ -405,46 +360,24 @@ export function RegistrationPaymentSuccess() {
                 </div>
               ) : null}
 
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => void handleDownload('image/png')}
-                  className="inline-flex items-center rounded-md bg-[#cfae3f] px-4 py-2 text-sm font-semibold text-black transition hover:bg-[#dab852]"
-                >
-                  Download PNG
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void handleDownloadPdf()}
-                  className="inline-flex items-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-                >
-                  Download PDF
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void handlePrintRaceBib()}
-                  className="inline-flex items-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-                >
-                  Print Race Bib
-                </button>
-              </div>
               {autoEmailMessage ? <p className="text-sm text-slate-600">{autoEmailMessage}</p> : null}
             </div>
           ) : null}
         </div>
 
-        <div className="flex flex-wrap gap-3">
+        <div className="flex flex-col items-center gap-3">
+          <button
+            type="button"
+            onClick={() => void handleDownload('image/png')}
+            className="inline-flex items-center rounded-md bg-[#cfae3f] px-6 py-2.5 text-sm font-semibold text-black transition hover:bg-[#dab852]"
+          >
+            Download PNG
+          </button>
           <Link
             to="/"
-            className="inline-flex items-center rounded-md bg-[#cfae3f] px-5 py-2.5 text-sm font-semibold text-black transition hover:bg-[#dab852]"
+            className="inline-flex items-center rounded-md bg-[#cfae3f] px-6 py-2.5 text-sm font-semibold text-black transition hover:bg-[#dab852]"
           >
             Back to home
-          </Link>
-          <Link
-            to={registrationId ? `/register/payment?registrationId=${encodeURIComponent(registrationId)}` : '/register/payment'}
-            className="inline-flex items-center rounded-md border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-          >
-            View payment page
           </Link>
         </div>
       </div>
