@@ -124,7 +124,21 @@ Deno.serve(async (req) => {
     .select('id')
     .single()
 
-  if (formError) return textResponse(formError.message, 500)
+  if (formError) {
+    if (String(formError.code ?? '') === '23505') {
+      const duplicateDetails = String((formError as { details?: string } | null)?.details ?? '')
+      if (/registration_forms_(user|email)_event_unique|ux_registration_forms_(user|email)_event/i.test(duplicateDetails)) {
+        return textResponse(
+          JSON.stringify({
+            code: 'REGISTRATION_UNIQUE_CONSTRAINT_BLOCK',
+            message: 'Database unique constraint is still blocking multiple riders for the same event. Apply allow-multiple-riders SQL first.',
+          }),
+          409,
+        )
+      }
+    }
+    return textResponse(formError.message, 500)
+  }
 
   const { error: detailsError } = await supabase.from('registration_rider_details').insert({
     registration_id: form.id,
