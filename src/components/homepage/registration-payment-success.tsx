@@ -12,6 +12,28 @@ async function loadImage(src: string): Promise<HTMLImageElement> {
   })
 }
 
+function drawRoundedRect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  radius: number,
+) {
+  const r = Math.min(radius, width / 2, height / 2)
+  ctx.beginPath()
+  ctx.moveTo(x + r, y)
+  ctx.lineTo(x + width - r, y)
+  ctx.quadraticCurveTo(x + width, y, x + width, y + r)
+  ctx.lineTo(x + width, y + height - r)
+  ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height)
+  ctx.lineTo(x + r, y + height)
+  ctx.quadraticCurveTo(x, y + height, x, y + height - r)
+  ctx.lineTo(x, y + r)
+  ctx.quadraticCurveTo(x, y, x + r, y)
+  ctx.closePath()
+}
+
 export function RegistrationPaymentSuccess() {
   const [params] = useSearchParams()
   const registrationId = params.get('registrationId')
@@ -24,7 +46,7 @@ export function RegistrationPaymentSuccess() {
 
   const statusLabel = useMemo(() => {
     if (!certificateData) return null
-    if (certificateData.isPaid) return 'Paid'
+    if (certificateData.isPaid) return 'PAID'
     return `Pending (${certificateData.paymentStatus})`
   }, [certificateData])
 
@@ -39,68 +61,107 @@ export function RegistrationPaymentSuccess() {
 
       const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height)
       gradient.addColorStop(0, '#f8fafc')
-      gradient.addColorStop(1, '#e2e8f0')
+      gradient.addColorStop(1, '#e8eef8')
       ctx.fillStyle = gradient
       ctx.fillRect(0, 0, canvas.width, canvas.height)
 
-      ctx.fillStyle = '#0f172a'
-      ctx.fillRect(0, 0, canvas.width, 96)
-      ctx.fillRect(0, canvas.height - 72, canvas.width, 72)
+      const leftShape = ctx.createLinearGradient(0, 0, 500, 300)
+      leftShape.addColorStop(0, 'rgba(11, 94, 215, 0.15)')
+      leftShape.addColorStop(1, 'rgba(0, 27, 68, 0.03)')
+      ctx.fillStyle = leftShape
+      ctx.beginPath()
+      ctx.moveTo(0, 0)
+      ctx.lineTo(500, 0)
+      ctx.lineTo(0, 330)
+      ctx.closePath()
+      ctx.fill()
 
-      ctx.fillStyle = '#f59e0b'
-      ctx.fillRect(0, 0, 220, 16)
-      ctx.fillRect(canvas.width - 260, 0, 260, 16)
-      ctx.fillRect(canvas.width - 180, canvas.height - 16, 180, 16)
+      ctx.fillStyle = 'rgba(148, 163, 184, 0.1)'
+      ctx.beginPath()
+      ctx.arc(470, 380, 220, 0, Math.PI * 2)
+      ctx.fill()
 
-      ctx.fillStyle = '#ffffff'
-      ctx.font = '700 36px Arial'
-      ctx.fillText('HARI NG AHON', 56, 58)
-      ctx.font = '500 20px Arial'
-      ctx.fillText('RACE CERTIFICATE', 56, 86)
+      ctx.fillStyle = '#001B44'
+      ctx.fillRect(0, 0, canvas.width, 22)
+      ctx.fillStyle = '#0B5ED7'
+      ctx.fillRect(0, canvas.height - 22, canvas.width, 22)
 
-      ctx.fillStyle = '#0f172a'
-      ctx.font = '700 44px Arial'
-      ctx.fillText(certificateData.riderName, 56, 188)
+      ctx.fillStyle = '#F59E0B'
+      ctx.beginPath()
+      ctx.moveTo(canvas.width - 220, 0)
+      ctx.lineTo(canvas.width, 0)
+      ctx.lineTo(canvas.width, 140)
+      ctx.closePath()
+      ctx.fill()
 
-      ctx.font = '600 22px Arial'
-      ctx.fillStyle = '#334155'
-      ctx.fillText(certificateData.eventTitle, 56, 228)
+      ctx.fillStyle = '#001B44'
+      ctx.font = '700 46px Arial'
+      ctx.fillText('HARI NG AHON', 58, 96)
+      ctx.fillStyle = '#0B5ED7'
+      ctx.font = '700 28px Arial'
+      ctx.fillText('CYCLING EVENT CREDENTIAL', 58, 130)
 
-      ctx.fillStyle = '#1e293b'
-      ctx.font = '700 20px Arial'
-      ctx.fillText('BIB NUMBER', 56, 290)
-      ctx.fillText('CATEGORY', 56, 356)
-      ctx.fillText('DISCIPLINE', 56, 422)
-      ctx.fillText('EVENT TYPE', 56, 488)
+      ctx.fillStyle = '#64748b'
+      ctx.font = '700 16px Arial'
+      ctx.fillText('RIDER NAME', 58, 196)
+      ctx.fillStyle = '#111827'
+      ctx.font = '700 56px Arial'
+      ctx.fillText(certificateData.riderName, 58, 252)
 
-      ctx.fillStyle = '#0f172a'
-      ctx.font = '700 42px Arial'
-      ctx.fillText(certificateData.bibNumber, 56, 332)
-      ctx.font = '700 36px Arial'
-      ctx.fillText(certificateData.category, 56, 396)
-      ctx.fillText(certificateData.discipline, 56, 462)
-      ctx.font = '600 24px Arial'
-      ctx.fillText(certificateData.eventType, 56, 526)
+      ctx.fillStyle = '#1e3a8a'
+      ctx.font = '700 28px Arial'
+      ctx.fillText(certificateData.eventTitle, 58, 298)
+
+      const drawLabelValue = (label: string, value: string, x: number, y: number, valueFont = '700 36px Arial') => {
+        ctx.fillStyle = '#475569'
+        ctx.font = '700 15px Arial'
+        ctx.fillText(label, x, y)
+        ctx.fillStyle = '#0f172a'
+        ctx.font = valueFont
+        ctx.fillText(value, x, y + 45)
+      }
+
+      drawLabelValue('BIB NUMBER', certificateData.bibNumber, 58, 358, '900 62px Arial')
+      drawLabelValue('CATEGORY', certificateData.category, 58, 470)
+      drawLabelValue('DISCIPLINE', certificateData.discipline, 360, 470)
+      drawLabelValue('EVENT TYPE', certificateData.eventType, 58, 578, '700 28px Arial')
 
       const qrDataUrl = await QRCode.toDataURL(certificateData.qrValue, {
-        width: 300,
+        width: 360,
         margin: 1,
-        color: { dark: '#0b1220', light: '#ffffff' },
+        color: { dark: '#111827', light: '#ffffff' },
       })
       const qrImage = await loadImage(qrDataUrl)
-      ctx.fillStyle = '#ffffff'
-      ctx.strokeStyle = '#cbd5e1'
-      ctx.lineWidth = 2
-      ctx.fillRect(860, 150, 340, 390)
-      ctx.strokeRect(860, 150, 340, 390)
-      ctx.drawImage(qrImage, 900, 190, 260, 260)
+      const qrCardX = 820
+      const qrCardY = 110
+      const qrCardWidth = 392
+      const qrCardHeight = 520
 
-      ctx.fillStyle = '#0f172a'
-      ctx.font = '700 24px Arial'
-      ctx.fillText(certificateData.bibNumber, 930, 490)
-      ctx.font = '500 18px Arial'
+      ctx.save()
+      drawRoundedRect(ctx, qrCardX, qrCardY, qrCardWidth, qrCardHeight, 28)
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.94)'
+      ctx.fill()
+      ctx.shadowColor = 'rgba(2, 6, 23, 0.2)'
+      ctx.shadowBlur = 20
+      ctx.strokeStyle = 'rgba(203, 213, 225, 0.95)'
+      ctx.lineWidth = 2
+      ctx.stroke()
+      ctx.restore()
+
+      ctx.drawImage(qrImage, qrCardX + 32, qrCardY + 44, 328, 328)
+      ctx.fillStyle = '#111827'
+      ctx.font = '800 36px Arial'
+      ctx.fillText(certificateData.bibNumber, qrCardX + 122, qrCardY + 424)
       ctx.fillStyle = '#475569'
-      ctx.fillText('QR Verification Code', 935, 520)
+      ctx.font = '600 18px Arial'
+      ctx.fillText(certificateData.verificationId, qrCardX + 54, qrCardY + 454)
+
+      drawRoundedRect(ctx, qrCardX + 42, qrCardY + 468, qrCardWidth - 84, 44, 18)
+      ctx.fillStyle = certificateData.isPaid ? '#0B5ED7' : '#9ca3af'
+      ctx.fill()
+      ctx.fillStyle = '#ffffff'
+      ctx.font = '700 20px Arial'
+      ctx.fillText(certificateData.isPaid ? 'PAYMENT VERIFIED' : 'PAYMENT PENDING', qrCardX + 92, qrCardY + 497)
 
       const fileType = mimeType === 'image/png' ? 'image/png' : 'image/jpeg'
       return canvas.toDataURL(fileType, 0.92)
@@ -164,6 +225,50 @@ export function RegistrationPaymentSuccess() {
     },
     [certificateData, createCertificateDataUrl],
   )
+
+  const handleDownloadPdf = useCallback(async () => {
+    if (!certificateData) return
+    const imageUrl = await createCertificateDataUrl('image/png')
+    const win = window.open('', '_blank', 'noopener,noreferrer,width=1400,height=900')
+    if (!win) return
+    win.document.write(`
+      <html>
+        <head><title>Hari ng Ahon Certificate ${certificateData.bibNumber}</title></head>
+        <body style="margin:0;padding:16px;background:#f3f4f6;">
+          <img src="${imageUrl}" style="width:100%;max-width:1280px;display:block;margin:0 auto;border-radius:12px;" />
+          <script>window.onload = () => window.print()</script>
+        </body>
+      </html>
+    `)
+    win.document.close()
+  }, [certificateData, createCertificateDataUrl])
+
+  const handlePrintRaceBib = useCallback(async () => {
+    if (!certificateData) return
+    const qrDataUrl = await QRCode.toDataURL(certificateData.qrValue, {
+      width: 420,
+      margin: 1,
+      color: { dark: '#111827', light: '#ffffff' },
+    })
+    const win = window.open('', '_blank', 'noopener,noreferrer,width=900,height=900')
+    if (!win) return
+    win.document.write(`
+      <html>
+        <head><title>Race Bib ${certificateData.bibNumber}</title></head>
+        <body style="font-family:Arial,sans-serif;margin:0;padding:20px;background:white;">
+          <div style="width:720px;margin:0 auto;border:3px solid #001B44;border-radius:16px;padding:24px;text-align:center;">
+            <div style="font-size:22px;font-weight:700;color:#0B5ED7;letter-spacing:1px;">HARI NG AHON CYCLING EVENT</div>
+            <div style="font-size:90px;font-weight:900;color:#111827;line-height:1;margin:18px 0 6px;">${certificateData.bibNumber}</div>
+            <div style="font-size:24px;font-weight:700;color:#1f2937;margin-bottom:14px;">${certificateData.riderName}</div>
+            <img src="${qrDataUrl}" style="width:220px;height:220px;display:block;margin:0 auto 10px;" />
+            <div style="font-size:14px;color:#475569;">${certificateData.verificationId}</div>
+          </div>
+          <script>window.onload = () => window.print()</script>
+        </body>
+      </html>
+    `)
+    win.document.close()
+  }, [certificateData])
 
   const refreshPaymentStatus = useCallback(async () => {
     setCheckingStatus(true)
@@ -293,7 +398,21 @@ export function RegistrationPaymentSuccess() {
                   onClick={() => void handleDownload('image/png')}
                   className="inline-flex items-center rounded-md bg-[#cfae3f] px-4 py-2 text-sm font-semibold text-black transition hover:bg-[#dab852]"
                 >
-                  Download QR Certificate
+                  Download PNG
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleDownloadPdf()}
+                  className="inline-flex items-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                >
+                  Download PDF
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handlePrintRaceBib()}
+                  className="inline-flex items-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                >
+                  Print Race Bib
                 </button>
               </div>
               {autoEmailMessage ? <p className="text-sm text-slate-600">{autoEmailMessage}</p> : null}

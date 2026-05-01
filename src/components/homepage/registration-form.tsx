@@ -147,25 +147,26 @@ export function RegistrationForm() {
 
   useEffect(() => {
     let active = true
-    setEventsLoading(true)
-    void api
-      .upcomingEvents()
-      .then((data) => {
+    void (async () => {
+      if (!active) return
+      setEventsLoading(true)
+      try {
+        const data = await api.upcomingEvents()
         if (!active) return
         setEvents(data)
         const queryEventId = params.get('eventId')
         const matched = queryEventId ? data.find((item) => item.id === queryEventId) : null
         const fallback = data[0]?.id ?? ''
         setEventId(matched?.id ?? fallback)
-      })
-      .catch((e) => {
+      } catch (e) {
         if (!active) return
         setError((e as Error).message || 'Failed to load events.')
-      })
-      .finally(() => {
-        if (!active) return
-        setEventsLoading(false)
-      })
+      } finally {
+        if (active) {
+          setEventsLoading(false)
+        }
+      }
+    })()
     return () => { active = false }
   }, [params])
 
@@ -178,54 +179,56 @@ export function RegistrationForm() {
   const [selectedEventTypeSlugs, setSelectedEventTypeSlugs] = useState<string[]>([])
 
   useEffect(() => {
-    if (!selectedEvent) {
-      setEventTypes([])
-      setSelectedEventTypeSlugs([])
-      return
-    }
-
-    // Parse slugs from the event's race_type field (comma-separated)
-    const rawSlugs = String(selectedEvent.race_type ?? '')
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean)
-
-    if (rawSlugs.length === 0) {
-      setEventTypes([])
-      setSelectedEventTypeSlugs([])
-      return
-    }
-
     let active = true
-    setEventTypesLoading(true)
+    void (async () => {
+      if (!selectedEvent) {
+        if (!active) return
+        setEventTypes([])
+        setSelectedEventTypeSlugs([])
+        return
+      }
 
-      ; (async () => {
-        try {
-          const { data, error: err } = await supabase
-            .from('event_types')
-            .select('slug, name')
-            .in('slug', rawSlugs)
+      // Parse slugs from the event's race_type field (comma-separated)
+      const rawSlugs = String(selectedEvent.race_type ?? '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
 
-          if (!active) return
-          if (err || !data || data.length === 0) {
-            // Fallback: derive name from slug if table query fails or returns nothing
-            setEventTypes(rawSlugs.map((slug) => ({ slug, name: formatSlug(slug) })))
-          } else {
-            // Preserve order from rawSlugs
-            const bySlug = new Map((data as EventType[]).map((t) => [t.slug, t]))
-            setEventTypes(rawSlugs.map((slug) => bySlug.get(slug) ?? { slug, name: formatSlug(slug) }))
-          }
-        } catch {
-          if (!active) return
+      if (rawSlugs.length === 0) {
+        if (!active) return
+        setEventTypes([])
+        setSelectedEventTypeSlugs([])
+        return
+      }
+
+      if (!active) return
+      setEventTypesLoading(true)
+      setSelectedEventTypeSlugs([])
+
+      try {
+        const { data, error: err } = await supabase
+          .from('event_types')
+          .select('slug, name')
+          .in('slug', rawSlugs)
+
+        if (!active) return
+        if (err || !data || data.length === 0) {
+          // Fallback: derive name from slug if table query fails or returns nothing
           setEventTypes(rawSlugs.map((slug) => ({ slug, name: formatSlug(slug) })))
-        } finally {
-          if (!active) return
+        } else {
+          // Preserve order from rawSlugs
+          const bySlug = new Map((data as EventType[]).map((t) => [t.slug, t]))
+          setEventTypes(rawSlugs.map((slug) => bySlug.get(slug) ?? { slug, name: formatSlug(slug) }))
+        }
+      } catch {
+        if (!active) return
+        setEventTypes(rawSlugs.map((slug) => ({ slug, name: formatSlug(slug) })))
+      } finally {
+        if (active) {
           setEventTypesLoading(false)
         }
-      })()
-
-    // Reset selections when event changes
-    setSelectedEventTypeSlugs([])
+      }
+    })()
 
     return () => { active = false }
   }, [selectedEvent])
@@ -247,49 +250,51 @@ export function RegistrationForm() {
   const [categoriesLoading, setCategoriesLoading] = useState(true)
 
   useEffect(() => {
-    if (!selectedEvent?.id) {
-      setDisciplineGroups([])
-      setForm((p) => ({ ...p, discipline: '' }))
-      setCategoryId('')
-      return
-    }
     let active = true
-    setCategoriesLoading(true)
+    void (async () => {
+      if (!selectedEvent?.id) {
+        if (!active) return
+        setDisciplineGroups([])
+        setForm((p) => ({ ...p, discipline: '' }))
+        setCategoryId('')
+        return
+      }
+      if (!active) return
+      setCategoriesLoading(true)
+      try {
+        const { data, error: err } = await supabase
+          .from('race_categories')
+          .select('id, discipline, category_name, code, rider_limit, active')
+          .eq('event_id', selectedEvent.id)
+          .eq('active', true)
 
-      ; (async () => {
-        try {
-          const { data, error: err } = await supabase
-            .from('race_categories')
-            .select('id, discipline, category_name, code, rider_limit, active')
-            .eq('event_id', selectedEvent.id)
-            .eq('active', true)
+        if (!active) return
+        if (err || !data) {
+          setDisciplineGroups([])
+          return
+        }
+        const rows = data as RaceCategory[]
+        const groupMap = new Map<string, RaceCategory[]>()
+        for (const row of rows) {
+          const disc = (row.discipline ?? '').trim() || 'General'
+          if (!groupMap.has(disc)) groupMap.set(disc, [])
+          groupMap.get(disc)!.push(row)
+        }
+        const groups: DisciplineGroup[] = Array.from(groupMap.entries()).map(
+          ([discipline, categories]) => ({ discipline, categories }),
+        )
+        setDisciplineGroups(groups)
 
-          if (!active) return
-          if (err || !data) {
-            setDisciplineGroups([])
-            return
-          }
-          const rows = data as RaceCategory[]
-          const groupMap = new Map<string, RaceCategory[]>()
-          for (const row of rows) {
-            const disc = (row.discipline ?? '').trim() || 'General'
-            if (!groupMap.has(disc)) groupMap.set(disc, [])
-            groupMap.get(disc)!.push(row)
-          }
-          const groups: DisciplineGroup[] = Array.from(groupMap.entries()).map(
-            ([discipline, categories]) => ({ discipline, categories }),
-          )
-          setDisciplineGroups(groups)
-
-          // Auto-select first discipline
-          const firstDisc = groups[0]?.discipline ?? ''
-          setForm((p) => ({ ...p, discipline: firstDisc }))
-          setCategoryId('')
-        } finally {
-          if (!active) return
+        // Auto-select first discipline
+        const firstDisc = groups[0]?.discipline ?? ''
+        setForm((p) => ({ ...p, discipline: firstDisc }))
+        setCategoryId('')
+      } finally {
+        if (active) {
           setCategoriesLoading(false)
         }
-      })()
+      }
+    })()
 
     return () => { active = false }
   }, [selectedEvent?.id])
@@ -308,9 +313,13 @@ export function RegistrationForm() {
     () => (currentDisciplineGroup?.categories ?? []).map((c) => c.id),
     [currentDisciplineGroup],
   )
+  const validCategoryId = useMemo(
+    () => (categoryId && currentCategoryIds.includes(categoryId) ? categoryId : ''),
+    [categoryId, currentCategoryIds],
+  )
   const selectedCategory = useMemo(
-    () => (currentDisciplineGroup?.categories ?? []).find((c) => c.id === categoryId) ?? null,
-    [currentDisciplineGroup, categoryId],
+    () => (currentDisciplineGroup?.categories ?? []).find((c) => c.id === validCategoryId) ?? null,
+    [currentDisciplineGroup, validCategoryId],
   )
 
   // Does this discipline have age-graded categories (Youth / Junior / Masters)?
@@ -328,15 +337,6 @@ export function RegistrationForm() {
     return resolveAgeCategoryByKeyword(raceAge, currentCategoryNames)
   }, [hasAgeCategories, raceAge, currentCategoryNames])
 
-  // When the discipline changes and the currently selected category doesn't exist in the new list,
-  // clear it so the rider must re-select.
-  useEffect(() => {
-    if (categoryId && !currentCategoryIds.includes(categoryId)) {
-      setCategoryId('')
-    }
-  }, [categoryId, currentCategoryIds])
-
-
   // ── Submit ─────────────────────────────────────────────────────────────────
   const onSubmit = async () => {
     setFieldErrors({})
@@ -352,7 +352,7 @@ export function RegistrationForm() {
     if (!form.contactNumber) errors.contactNumber = 'Contact number is required.'
     if (!form.emergencyContactName) errors.emergencyContactName = 'Emergency contact name is required.'
     if (!form.emergencyContactNumber) errors.emergencyContactNumber = 'Emergency contact number is required.'
-    if (!categoryId) errors.category = 'Please select a category.'
+    if (!validCategoryId) errors.category = 'Please select a category.'
     if (!shirtSize) errors.shirtSize = 'Please select a shirt size.'
     if (!selectedEvent) errors.event = 'Please select an event.'
     if (selectedEventTypeSlugs.length === 0) errors.eventTypes = 'Please select at least one event type.'
@@ -371,7 +371,7 @@ export function RegistrationForm() {
       const { registrationId } = await registrationService.createRegistration({
         raceType: raceTypeLabel || (selectedEvent!.race_type ?? ''),
         eventId: selectedEvent!.id,
-        raceCategoryId: categoryId,
+        raceCategoryId: validCategoryId,
         // Pass computed total so payment page reflects actual charge
         registrationFee: totalFee,
         registrantEmail: form.email,
@@ -635,7 +635,7 @@ export function RegistrationForm() {
                   Age / Class Category <span className="text-rose-500">*</span>
                 </label>
                 <select
-                  value={categoryId}
+                  value={validCategoryId}
                   onChange={(e) => setCategoryId(e.target.value)}
                   className={`w-full rounded-md border bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-[#cfae3f] ${fieldErrors.category ? 'border-rose-400' : 'border-slate-300'
                     }`}

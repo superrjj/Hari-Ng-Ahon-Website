@@ -88,6 +88,66 @@ function normalizeRegistrationStatus(paymentStatus: string) {
   }
 }
 
+function extractBibSequenceByPrefix(bibNumber: string | null | undefined, prefix: string) {
+  const value = String(bibNumber ?? '').trim()
+  const escapedPrefix = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const match = value.match(new RegExp(`^${escapedPrefix}(\\d+)$`))
+  if (!match) return 0
+  const n = Number.parseInt(match[1], 10)
+  return Number.isFinite(n) ? n : 0
+}
+
+async function assignBibIfMissing(registrationId: string) {
+  const now = new Date().toISOString()
+  const { data: registration, error: registrationError } = await supabase
+    .from('registration_forms')
+    .select('id, race_category_id, bib_number')
+    .eq('id', registrationId)
+    .maybeSingle()
+  if (registrationError) throw registrationError
+  if (!registration?.id) throw new Error('Registration not found while assigning bib.')
+  if (String(registration.bib_number ?? '').trim()) return
+  if (!registration.race_category_id) throw new Error('Missing race category for registration.')
+
+  const { data: raceCategory, error: raceCategoryError } = await supabase
+    .from('race_categories')
+    .select('code, category_name, rider_limit')
+    .eq('id', registration.race_category_id)
+    .maybeSingle()
+  if (raceCategoryError) throw raceCategoryError
+  const categoryCode = String(raceCategory?.code ?? '').trim()
+  if (!categoryCode) throw new Error('Missing category code for registration category.')
+
+  const { data: existingBibs, error: bibError } = await supabase
+    .from('registration_forms')
+    .select('bib_number')
+    .eq('race_category_id', registration.race_category_id)
+    .not('bib_number', 'is', null)
+    .order('created_at', { ascending: true })
+    .limit(5000)
+  if (bibError) throw bibError
+
+  const maxSequence = (existingBibs ?? []).reduce((max, row) => {
+    const seq = extractBibSequenceByPrefix(row.bib_number, categoryCode)
+    return seq > max ? seq : max
+  }, 0)
+  const nextSequence = maxSequence + 1
+  const riderLimit = Number(raceCategory?.rider_limit ?? 0)
+  if (Number.isFinite(riderLimit) && riderLimit > 0 && nextSequence > riderLimit) {
+    throw new Error(
+      `Category limit reached for ${String(raceCategory?.category_name ?? categoryCode)}. Max riders: ${riderLimit}.`,
+    )
+  }
+  const sequenceDigits = Math.max(2, String(Math.max(riderLimit, nextSequence)).length)
+  const nextBib = `${categoryCode}${String(nextSequence).padStart(sequenceDigits, '0')}`
+
+  const { error: updateError } = await supabase
+    .from('registration_forms')
+    .update({ bib_number: nextBib, updated_at: now })
+    .eq('id', registrationId)
+  if (updateError) throw updateError
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method !== 'POST') {
     return new Response('Method not allowed', { status: 405 })
@@ -185,6 +245,25 @@ Deno.serve(async (req: Request) => {
 
   if (registrationUpdateError) {
     return new Response(`Failed to update registration status: ${registrationUpdateError.message}`, { status: 500 })
+  }
+
+  if (normalizedStatus === 'paid') {
+    const { error: paidFinalizeError } = await supabase
+      .from('registration_forms')
+      .update({
+        status: 'paid',
+        confirmed_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', order.registration_id)
+    if (paidFinalizeError) {
+      return new Response(`Failed to finalize paid registration: ${paidFinalizeError.message}`, { status: 500 })
+    }
+    try {
+      await assignBibIfMissing(order.registration_id)
+    } catch (e) {
+      return new Response(`Payment processed but bib assignment failed: ${(e as Error).message}`, { status: 500 })
+    }
   }
 
   const { error: webhookProcessedError } = await supabase
