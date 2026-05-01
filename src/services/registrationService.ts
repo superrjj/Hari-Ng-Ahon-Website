@@ -424,7 +424,7 @@ export const registrationService = {
     const discipline = String(rider?.discipline ?? event?.race_type ?? 'Cycling')
     const eventType = normalizeEventType(event?.race_type)
     const categoryCode = String(raceCategory?.code ?? '').trim() || '00'
-    const bibNumber = String(registration.bib_number ?? '').trim() || `${categoryCode}00`
+    const bibNumber = String(registration.bib_number ?? '').trim() || `${categoryCode}01`
     const paymentStatus = String(txStatus ?? order?.status ?? registration.status ?? 'pending')
     const normalizedStatus = paymentStatus.toLowerCase()
     const isPaid = normalizedStatus === 'paid' || normalizedStatus === 'confirmed'
@@ -435,13 +435,7 @@ export const registrationService = {
       paymentTxId: txId,
       bibNumber,
     })
-    const qrPayload = {
-      registration_id: verificationId,
-      bib_number: bibNumber,
-      rider_name: riderName,
-      event_id: String(event?.id ?? registration.event_id ?? ''),
-      verification_token: verificationToken,
-    }
+    const qrPayload = `BIB:${bibNumber}|REG:${verificationId}|EVT:${String(event?.id ?? registration.event_id ?? '')}`
 
     return {
       registrationId: registration.id,
@@ -454,7 +448,7 @@ export const registrationService = {
       eventTitle: String(event?.title ?? 'Hari ng Ahon'),
       eventId: String(event?.id ?? registration.event_id ?? ''),
       registrantEmail: String(registration.registrant_email ?? ''),
-      qrValue: JSON.stringify(qrPayload),
+      qrValue: qrPayload,
       verificationId,
       verificationToken,
       paymentStatus,

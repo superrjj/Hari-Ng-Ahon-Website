@@ -58,6 +58,8 @@ function extractBibFromCode(code: string) {
   }
   const match = trimmed.match(/BIB:([^|]+)/i)
   if (match?.[1]) return match[1].trim()
+  const compactMatch = trimmed.match(/"b"\s*:\s*"([^"]+)"/i)
+  if (compactMatch?.[1]) return compactMatch[1].trim()
   return trimmed
 }
 
