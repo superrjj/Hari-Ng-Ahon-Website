@@ -357,31 +357,6 @@ export const registrationService = {
       if (txInsertError) throw txInsertError
     }
 
-    const { data: currentRegistration, error: currentRegistrationError } = await supabase
-      .from('registration_forms')
-      .select('id, user_id, event_id, race_category_id')
-      .eq('id', registrationId)
-      .maybeSingle()
-    if (currentRegistrationError) throw currentRegistrationError
-    if (!currentRegistration) throw new Error('Registration record not found.')
-
-    if (currentRegistration.user_id && currentRegistration.event_id && currentRegistration.race_category_id) {
-      const { data: existingConfirmed, error: existingConfirmedError } = await supabase
-        .from('registration_forms')
-        .select('id')
-        .eq('user_id', currentRegistration.user_id)
-        .eq('event_id', currentRegistration.event_id)
-        .eq('race_category_id', currentRegistration.race_category_id)
-        .eq('status', 'confirmed')
-        .neq('id', currentRegistration.id)
-        .limit(1)
-        .maybeSingle()
-      if (existingConfirmedError) throw existingConfirmedError
-      if (existingConfirmed?.id) {
-        throw new Error('A confirmed registration already exists for this account, event, and category.')
-      }
-    }
-
     const { error: registrationUpdateError } = await supabase
       .from('registration_forms')
       .update({

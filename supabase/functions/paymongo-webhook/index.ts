@@ -250,39 +250,6 @@ Deno.serve(async (req: Request) => {
   }
 
   if (normalizedStatus === 'paid') {
-    const { data: registration, error: registrationLookupError } = await supabase
-      .from('registration_forms')
-      .select('id, user_id, event_id, race_category_id')
-      .eq('id', order.registration_id)
-      .maybeSingle()
-    if (registrationLookupError) {
-      return new Response(`Failed to load registration for confirmation: ${registrationLookupError.message}`, { status: 500 })
-    }
-    if (!registration?.id) {
-      return new Response('Registration not found for confirmation', { status: 404 })
-    }
-
-    // Confirmation-stage uniqueness guard:
-    // allow new attempts but block more than one confirmed entry per user+event+category.
-    if (registration.user_id && registration.event_id && registration.race_category_id) {
-      const { data: existingConfirmed, error: existingConfirmedError } = await supabase
-        .from('registration_forms')
-        .select('id')
-        .eq('user_id', registration.user_id)
-        .eq('event_id', registration.event_id)
-        .eq('race_category_id', registration.race_category_id)
-        .eq('status', 'confirmed')
-        .neq('id', registration.id)
-        .limit(1)
-        .maybeSingle()
-      if (existingConfirmedError) {
-        return new Response(`Failed to validate duplicate confirmation: ${existingConfirmedError.message}`, { status: 500 })
-      }
-      if (existingConfirmed?.id) {
-        return new Response('Duplicate confirmed registration exists for this account, event, and category.', { status: 409 })
-      }
-    }
-
     const { error: paidFinalizeError } = await supabase
       .from('registration_forms')
       .update({
