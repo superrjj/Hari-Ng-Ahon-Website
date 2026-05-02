@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { api } from '../../services/api'
 import { supabase } from '../../lib/supabase'
-import { registrationService } from '../../services/registrationService'
+import { registrationService, saveRegistrationCheckoutPayload } from '../../services/registrationService'
 import type { Event } from '../../types'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -368,13 +368,14 @@ export function RegistrationForm() {
         .map((slug) => eventTypes.find((t) => t.slug === slug)?.name ?? formatSlug(slug))
         .join(', ')
 
-      const { registrationId } = await registrationService.createRegistration({
+      saveRegistrationCheckoutPayload({
         raceType: raceTypeLabel || (selectedEvent!.race_type ?? ''),
         eventId: selectedEvent!.id,
         raceCategoryId: validCategoryId,
-        // Pass computed total so payment page reflects actual charge
         registrationFee: totalFee,
         registrantEmail: form.email,
+        eventTitle: selectedEvent?.title ?? '',
+        raceTypeLabel: selectedEvent?.race_type ?? '',
         rider: {
           firstName: form.firstName,
           lastName: form.lastName,
@@ -392,7 +393,7 @@ export function RegistrationForm() {
         },
       })
 
-      navigate(`/register/payment?registrationId=${encodeURIComponent(registrationId)}`)
+      navigate('/register/payment')
     } catch (e) {
       setError((e as Error).message)
     } finally {

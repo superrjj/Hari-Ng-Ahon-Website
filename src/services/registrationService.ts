@@ -20,6 +20,58 @@ export type CheckoutItem = {
   currency: string
 }
 
+/** Serialized on the payment step immediately before PayMongo (DB row created on Proceed). */
+export type RegistrationCheckoutPayload = {
+  raceType: RegistrationEventKey
+  eventId?: string
+  raceCategoryId?: string
+  registrantEmail: string
+  registrationFee: number
+  /** For payment UI before a DB row exists */
+  eventTitle?: string
+  raceTypeLabel?: string
+  rider: {
+    firstName: string
+    lastName: string
+    gender: string
+    birthDate: string
+    address: string
+    contactNumber: string
+    emergencyContactName: string
+    emergencyContactNumber: string
+    teamName?: string
+    discipline?: string
+    ageCategory?: string
+    jerseySize?: string
+    birthYear?: number | null
+  }
+}
+
+export const REGISTRATION_CHECKOUT_STORAGE_KEY = 'hna_registration_checkout_v1'
+
+export function loadRegistrationCheckoutPayload(): RegistrationCheckoutPayload | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = window.sessionStorage.getItem(REGISTRATION_CHECKOUT_STORAGE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as RegistrationCheckoutPayload
+    if (!parsed?.rider?.firstName || !parsed.registrantEmail) return null
+    return parsed as RegistrationCheckoutPayload
+  } catch {
+    return null
+  }
+}
+
+export function saveRegistrationCheckoutPayload(payload: RegistrationCheckoutPayload) {
+  if (typeof window === 'undefined') return
+  window.sessionStorage.setItem(REGISTRATION_CHECKOUT_STORAGE_KEY, JSON.stringify(payload))
+}
+
+export function clearRegistrationCheckoutPayload() {
+  if (typeof window === 'undefined') return
+  window.sessionStorage.removeItem(REGISTRATION_CHECKOUT_STORAGE_KEY)
+}
+
 export type RegistrationCertificateData = {
   registrationId: string
   riderName: string
@@ -127,7 +179,19 @@ export const registrationService = {
         rider: args.rider,
       },
     })
-    if (error) throw new Error(await getEdgeFunctionErrorMessage(error, 'Unable to create registration.'))
+    if (error) {
+      const raw = await getEdgeFunctionErrorMessage(error, 'Unable to create registration.')
+      let msg = raw
+      if (raw.trim().startsWith('{')) {
+        try {
+          const parsed = JSON.parse(raw) as { message?: string }
+          if (parsed?.message) msg = String(parsed.message)
+        } catch {
+          /* keep raw */
+        }
+      }
+      throw new Error(msg)
+    }
     return { registrationId: data.registrationId as string }
   },
 
@@ -156,67 +220,9 @@ export const registrationService = {
     }
   },
 
-  async getPendingPaymentDraft(registrationId?: string): Promise<PendingPaymentDraft | null> {
-    const { data: authData } = await supabase.auth.getSession()
-    const userId = authData.session?.user?.id ?? null
-    const userEmail = authData.session?.user?.email ?? null
-
-    if (!registrationId && !userId && !userEmail) return null
-
-    // First find candidate registrations owned by current user/email.
-    let registrationQuery = supabase
-      .from('registration_forms')
-    .select('id, event_id, registration_fee, user_id, registrant_email, status')
-    // Only show "resume-able" payment drafts. If user cancelled, we set registration status back to 'draft',
-    // so we should not surface it again on the home page.
-    .in('status', ['payment_processing', 'pending_payment'])
-
-    if (registrationId) {
-      registrationQuery = registrationQuery.eq('id', registrationId)
-    } else if (userId) {
-      registrationQuery = registrationQuery.eq('user_id', userId)
-    } else if (userEmail) {
-      registrationQuery = registrationQuery.eq('registrant_email', userEmail)
-    }
-
-    const { data: registrations, error: registrationError } = await registrationQuery.order('created_at', { ascending: false }).limit(20)
-    if (registrationError) throw registrationError
-    if (!registrations || registrations.length === 0) return null
-
-    const registrationIds = registrations.map((item) => item.id)
-    const { data: orders, error: orderError } = await supabase
-      .from('payment_orders')
-      .select('id, registration_id, amount, currency, status, merchant_reference, created_at')
-      .in('registration_id', registrationIds)
-      .in('status', ['created', 'pending', 'processing'])
-      .order('created_at', { ascending: false })
-      .limit(20)
-
-    if (orderError) throw orderError
-    const order = orders?.[0]
-    if (!order) return null
-
-    const registration = registrations.find((item) => item.id === order.registration_id)
-    if (!registration) return null
-
-    const { data: event, error: eventError } = await supabase
-      .from('events')
-      .select('title, race_type')
-      .eq('id', registration.event_id)
-      .maybeSingle()
-    if (eventError) throw eventError
-
-    return {
-      paymentOrderId: order.id,
-      registrationId: order.registration_id,
-      amount: Number(order.amount ?? registration.registration_fee ?? 0),
-      currency: String(order.currency ?? 'PHP'),
-      status: String(order.status ?? 'pending'),
-      merchantReference: String(order.merchant_reference ?? ''),
-      createdAt: order.created_at ?? null,
-      eventTitle: String(event?.title ?? 'Event Registration'),
-      raceType: String(event?.race_type ?? '-'),
-    }
+  async getPendingPaymentDraft(_registrationId?: string): Promise<PendingPaymentDraft | null> {
+    void _registrationId
+    return null
   },
 
   async cancelPendingPaymentDraft(registrationId: string) {
@@ -229,9 +235,9 @@ export const registrationService = {
 
     const { error: registrationError } = await supabase
       .from('registration_forms')
-      .update({ status: 'draft', updated_at: new Date().toISOString() })
+      .update({ status: 'cancelled', updated_at: new Date().toISOString() })
       .eq('id', registrationId)
-      .in('status', ['payment_processing', 'pending_payment', 'draft'])
+      .in('status', ['payment_processing', 'pending_payment'])
     if (registrationError) throw registrationError
   },
 
@@ -262,63 +268,6 @@ export const registrationService = {
 
   async markRegistrationAsPaidAfterPaymongoRedirect(registrationId: string) {
     const now = new Date().toISOString()
-    const { data: regForBib, error: regForBibError } = await supabase
-      .from('registration_forms')
-      .select('id, race_category_id, bib_number')
-      .eq('id', registrationId)
-      .maybeSingle()
-    if (regForBibError) throw regForBibError
-    if (!regForBib) throw new Error('Registration record not found.')
-
-    if (!String(regForBib.bib_number ?? '').trim()) {
-      if (!regForBib.race_category_id) {
-        throw new Error('Missing race category for this registration.')
-      }
-
-      const { data: raceCategory, error: raceCategoryError } = await supabase
-        .from('race_categories')
-        .select('code, category_name, rider_limit')
-        .eq('id', regForBib.race_category_id)
-        .maybeSingle()
-      if (raceCategoryError) throw raceCategoryError
-
-      const categoryCode = String(raceCategory?.code ?? '').trim()
-      if (!categoryCode) throw new Error('Missing category code for this registration category.')
-
-      const { data: existingBibs, error: existingBibsError } = await supabase
-        .from('registration_forms')
-        .select('bib_number')
-        .eq('race_category_id', regForBib.race_category_id)
-        .not('bib_number', 'is', null)
-        .order('created_at', { ascending: true })
-        .limit(5000)
-      if (existingBibsError) throw existingBibsError
-
-      const maxSequence = (existingBibs ?? []).reduce((max, row) => {
-        const seq = extractBibSequenceByPrefix(String(row.bib_number ?? ''), categoryCode)
-        return seq > max ? seq : max
-      }, 0)
-      const nextSequence = maxSequence + 1
-      const riderLimit = Number(raceCategory?.rider_limit ?? 0)
-      if (Number.isFinite(riderLimit) && riderLimit > 0 && nextSequence > riderLimit) {
-        throw new Error(
-          `Category limit reached for ${String(raceCategory?.category_name ?? categoryCode)}. Max riders: ${riderLimit}.`,
-        )
-      }
-      if (nextSequence > 99) {
-        throw new Error(`Category bib sequence exceeded 2 digits for category code ${categoryCode}.`)
-      }
-      const generatedBib = `${categoryCode}${String(nextSequence).padStart(2, '0')}`
-
-      const { error: bibUpdateError } = await supabase
-        .from('registration_forms')
-        .update({
-          bib_number: generatedBib,
-          updated_at: now,
-        })
-        .eq('id', regForBib.id)
-      if (bibUpdateError) throw bibUpdateError
-    }
 
     const { data: order, error: orderLookupError } = await supabase
       .from('payment_orders')
@@ -366,6 +315,65 @@ export const registrationService = {
       })
       .eq('id', registrationId)
     if (registrationUpdateError) throw registrationUpdateError
+
+    const { data: regForBib, error: regForBibError } = await supabase
+      .from('registration_forms')
+      .select('id, race_category_id, bib_number')
+      .eq('id', registrationId)
+      .maybeSingle()
+    if (regForBibError) throw regForBibError
+    if (!regForBib) throw new Error('Registration record not found.')
+
+    if (!String(regForBib.bib_number ?? '').trim()) {
+      if (!regForBib.race_category_id) {
+        throw new Error('Missing race category for this registration.')
+      }
+
+      const { data: raceCategory, error: raceCategoryError } = await supabase
+        .from('race_categories')
+        .select('code, category_name, rider_limit')
+        .eq('id', regForBib.race_category_id)
+        .maybeSingle()
+      if (raceCategoryError) throw raceCategoryError
+
+      const categoryCode = String(raceCategory?.code ?? '').trim()
+      if (!categoryCode) throw new Error('Missing category code for this registration category.')
+
+      const { data: existingBibs, error: existingBibsError } = await supabase
+        .from('registration_forms')
+        .select('bib_number')
+        .eq('race_category_id', regForBib.race_category_id)
+        .eq('status', 'confirmed')
+        .not('bib_number', 'is', null)
+        .order('created_at', { ascending: true })
+        .limit(5000)
+      if (existingBibsError) throw existingBibsError
+
+      const maxSequence = (existingBibs ?? []).reduce((max, row) => {
+        const seq = extractBibSequenceByPrefix(String(row.bib_number ?? ''), categoryCode)
+        return seq > max ? seq : max
+      }, 0)
+      const nextSequence = maxSequence + 1
+      const riderLimit = Number(raceCategory?.rider_limit ?? 0)
+      if (Number.isFinite(riderLimit) && riderLimit > 0 && nextSequence > riderLimit) {
+        throw new Error(
+          `Category limit reached for ${String(raceCategory?.category_name ?? categoryCode)}. Max riders: ${riderLimit}.`,
+        )
+      }
+      if (nextSequence > 99) {
+        throw new Error(`Category bib sequence exceeded 2 digits for category code ${categoryCode}.`)
+      }
+      const generatedBib = `${categoryCode}${String(nextSequence).padStart(2, '0')}`
+
+      const { error: bibUpdateError } = await supabase
+        .from('registration_forms')
+        .update({
+          bib_number: generatedBib,
+          updated_at: now,
+        })
+        .eq('id', regForBib.id)
+      if (bibUpdateError) throw bibUpdateError
+    }
   },
 
   async getRegistrationCertificateData(registrationId: string): Promise<RegistrationCertificateData | null> {
@@ -424,11 +432,17 @@ export const registrationService = {
     const discipline = String(rider?.discipline ?? event?.race_type ?? 'Cycling')
     const eventType = normalizeEventType(event?.race_type)
     const categoryCode = String(raceCategory?.code ?? '').trim() || '00'
-    const bibNumber = String(registration.bib_number ?? '').trim() || `${categoryCode}01`
+    const rawBib = String(registration.bib_number ?? '').trim()
     const paymentStatus = String(txStatus ?? order?.status ?? registration.status ?? 'pending')
     const normalizedStatus = paymentStatus.toLowerCase()
-    const isPaid = normalizedStatus === 'paid' || normalizedStatus === 'confirmed'
-    const verificationId = `REG-${new Date().getFullYear()}-${bibNumber.padStart(5, '0')}`
+    const isPaid =
+      normalizedStatus === 'paid' ||
+      normalizedStatus === 'confirmed' ||
+      String(registration.status ?? '').toLowerCase() === 'confirmed'
+    const bibNumber = rawBib
+    const verificationId = bibNumber
+      ? `REG-${new Date().getFullYear()}-${bibNumber.padStart(5, '0')}`
+      : `REG-${new Date().getFullYear()}-${registration.id.replace(/-/g, '').slice(0, 10)}`
     const verificationToken = getStableVerificationToken({
       registrationId: registration.id,
       paymentOrderId: order?.id ?? null,

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { adminApi, type AdminRegistrationRow } from '../../services/adminApi'
 import { supabase } from '../../lib/supabase'
-import { CalendarDays, CheckCircle2, Printer, Search, ShieldX, Users } from 'lucide-react'
+import { AlertTriangle, CalendarDays, CheckCircle2, Printer, Search, ShieldX, Users } from 'lucide-react'
 
 function pill(status: string) {
   const s = status.toLowerCase()
@@ -127,7 +127,21 @@ export function AdminRegistrations() {
   }, [q, rows, raceFilter, paymentFilter, categoryFilter, sortBy])
 
   const paidCount = filtered.filter((r) => String(r.payment_status ?? '').toLowerCase() === 'paid').length
-  const pendingCount = filtered.filter((r) => String(r.payment_status ?? '').toLowerCase() === 'pending').length
+  const pendingCount = filtered.filter((r) => String(r.payment_status ?? '').toLowerCase() !== 'paid').length
+
+  const duplicateNonPaidKeys = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const r of filtered) {
+      if (String(r.payment_status ?? '').toLowerCase() === 'paid') continue
+      const key = `${String(r.registrant_email ?? '').toLowerCase()}|${String(r.event_title ?? '')}|${String(r.race_category_id ?? r.age_category ?? '')}`
+      counts.set(key, (counts.get(key) ?? 0) + 1)
+    }
+    const dups = new Set<string>()
+    for (const [key, n] of counts.entries()) {
+      if (n > 1) dups.add(key)
+    }
+    return dups
+  }, [filtered])
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const currentPage = Math.min(page, totalPages)
   const startIndex = filtered.length === 0 ? 0 : (currentPage - 1) * PAGE_SIZE
@@ -237,7 +251,7 @@ export function AdminRegistrations() {
 
         <div className="grid gap-3 border-b border-slate-100 px-4 py-3 md:grid-cols-2 xl:grid-cols-3">
           <StatCard label="Paid" value={paidCount} icon={<CheckCircle2 className="h-4 w-4" />} tone="emerald" loading={loading} />
-          <StatCard label="Pending" value={pendingCount} icon={<CalendarDays className="h-4 w-4" />} tone="amber" loading={loading} />
+          <StatCard label="Unpaid / pending" value={pendingCount} icon={<CalendarDays className="h-4 w-4" />} tone="amber" loading={loading} />
           <StatCard label="Total Registrations" value={filtered.length} icon={<Users className="h-4 w-4" />} tone="violet" loading={loading} />
         </div>
 
@@ -276,6 +290,8 @@ export function AdminRegistrations() {
                 paginated.map((r) => {
                   const payment = String(r.payment_status ?? 'unknown')
                   const isPaid = payment.toLowerCase() === 'paid'
+                  const dupKey = `${String(r.registrant_email ?? '').toLowerCase()}|${String(r.event_title ?? '')}|${String(r.race_category_id ?? r.age_category ?? '')}`
+                  const showDupWarning = !isPaid && duplicateNonPaidKeys.has(dupKey)
                   const referenceNo = (r.provider_reference ?? '').trim()
                   return (
                     <tr key={r.id} className="text-slate-800 transition-colors hover:bg-slate-50/70">
@@ -300,7 +316,24 @@ export function AdminRegistrations() {
                       <td className="py-3 pr-3 text-xs">
                         {isPaid ? <span className="font-semibold text-emerald-700">{referenceNo || '-'}</span> : <span className="text-slate-400">-</span>}
                       </td>
-                      <td className="py-3 pr-3 text-xs font-semibold text-slate-700">{r.bib_number ?? '—'}</td>
+                      <td className="py-3 pr-3 text-xs font-semibold text-slate-700">
+                        <span className="inline-flex items-center gap-1">
+                          {showDupWarning ? (
+                            <span title="Multiple unpaid registrations for the same rider, event, and category.">
+                              <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-500" aria-hidden />
+                            </span>
+                          ) : null}
+                          <span
+                            title={
+                              isPaid
+                                ? undefined
+                                : 'Bib is assigned only after payment is confirmed.'
+                            }
+                          >
+                            {isPaid && r.bib_number ? r.bib_number : '—'}
+                          </span>
+                        </span>
+                      </td>
                       <td className="py-3 pr-4 text-right">
                         <Link
                           to={`/admin/registrations/${encodeURIComponent(r.id)}`}

@@ -108,7 +108,38 @@ Deno.serve(async (req) => {
     resolvedRaceCategoryId = raceCategory.id
   }
 
+  if (resolvedRaceCategoryId) {
+    const { data: sameCombo, error: dupLookupError } = await supabase
+      .from('registration_forms')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('event_id', event.id)
+      .eq('race_category_id', resolvedRaceCategoryId)
+    if (dupLookupError) return textResponse(dupLookupError.message, 500)
+    const siblingIds = (sameCombo ?? []).map((r) => r.id).filter(Boolean)
+    if (siblingIds.length > 0) {
+      const { data: paidOrder, error: paidLookupError } = await supabase
+        .from('payment_orders')
+        .select('id')
+        .in('registration_id', siblingIds)
+        .eq('status', 'paid')
+        .limit(1)
+        .maybeSingle()
+      if (paidLookupError) return textResponse(paidLookupError.message, 500)
+      if (paidOrder?.id) {
+        return textResponse(
+          JSON.stringify({
+            code: 'ALREADY_REGISTERED_PAID',
+            message: 'You are already registered and confirmed for this category.',
+          }),
+          409,
+        )
+      }
+    }
+  }
+
   const registrationAttemptId = createAttemptId()
+  const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString()
 
   const { data: form, error: formError } = await supabase
     .from('registration_forms')
@@ -120,6 +151,7 @@ Deno.serve(async (req) => {
       registration_fee: effectiveFee ?? Number(event.registration_fee ?? 0),
       registrant_email: normalizedEmail,
       submitted_at: new Date().toISOString(),
+      expires_at: expiresAt,
     })
     .select('id')
     .single()

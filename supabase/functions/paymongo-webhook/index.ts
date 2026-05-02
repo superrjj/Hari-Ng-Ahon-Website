@@ -79,8 +79,9 @@ function normalizeRegistrationStatus(paymentStatus: string) {
     case 'paid':
       return 'confirmed'
     case 'failed':
+      return 'cancelled'
     case 'expired':
-      return 'draft'
+      return 'expired'
     case 'processing':
     case 'pending':
     default:
@@ -122,6 +123,7 @@ async function assignBibIfMissing(registrationId: string) {
     .from('registration_forms')
     .select('bib_number')
     .eq('race_category_id', registration.race_category_id)
+    .eq('status', 'confirmed')
     .not('bib_number', 'is', null)
     .order('created_at', { ascending: true })
     .limit(5000)
@@ -225,37 +227,28 @@ Deno.serve(async (req: Request) => {
     return new Response(`Failed to record payment transaction: ${txError.message}`, { status: 500 })
   }
 
-  const { error: orderUpdateError } = await supabase
-    .from('payment_orders')
-    .update({
-      status: normalizedStatus,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', order.id)
+  const orderPatch: Record<string, unknown> = {
+    status: normalizedStatus,
+    updated_at: new Date().toISOString(),
+  }
+  if (normalizedStatus === 'paid') {
+    orderPatch.paid_at = paidAt ?? new Date().toISOString()
+  }
+
+  const { error: orderUpdateError } = await supabase.from('payment_orders').update(orderPatch).eq('id', order.id)
 
   if (orderUpdateError) {
     return new Response(`Failed to update payment order: ${orderUpdateError.message}`, { status: 500 })
   }
 
-  const { error: registrationUpdateError } = await supabase
-    .from('registration_forms')
-    .update({
-      status: normalizeRegistrationStatus(normalizedStatus),
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', order.registration_id)
-
-  if (registrationUpdateError) {
-    return new Response(`Failed to update registration status: ${registrationUpdateError.message}`, { status: 500 })
-  }
-
   if (normalizedStatus === 'paid') {
+    const paidNow = new Date().toISOString()
     const { error: paidFinalizeError } = await supabase
       .from('registration_forms')
       .update({
         status: 'confirmed',
-        confirmed_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+        confirmed_at: paidNow,
+        updated_at: paidNow,
       })
       .eq('id', order.registration_id)
     if (paidFinalizeError) {
@@ -265,6 +258,18 @@ Deno.serve(async (req: Request) => {
       await assignBibIfMissing(order.registration_id)
     } catch (e) {
       return new Response(`Payment processed but bib assignment failed: ${(e as Error).message}`, { status: 500 })
+    }
+  } else {
+    const { error: registrationUpdateError } = await supabase
+      .from('registration_forms')
+      .update({
+        status: normalizeRegistrationStatus(normalizedStatus),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', order.registration_id)
+
+    if (registrationUpdateError) {
+      return new Response(`Failed to update registration status: ${registrationUpdateError.message}`, { status: 500 })
     }
   }
 

@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
-import { registrationService, type CheckoutItem, type PendingPaymentDraft } from '../../services/registrationService'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import {
+  registrationService,
+  type CheckoutItem,
+  clearRegistrationCheckoutPayload,
+  loadRegistrationCheckoutPayload,
+  type RegistrationCheckoutPayload,
+} from '../../services/registrationService'
 
 // ─── Step config ──────────────────────────────────────────────────────────────
 
@@ -312,15 +318,16 @@ export function RegistrationPayment() {
   const [agreed, setAgreed] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [pendingDraft, setPendingDraft] = useState<PendingPaymentDraft | null>(null)
+  const [checkoutPayload, setCheckoutPayload] = useState<RegistrationCheckoutPayload | null>(null)
   const [checkoutItem, setCheckoutItem] = useState<CheckoutItem | null>(null)
-  const [checkingDraft, setCheckingDraft] = useState(true)
-  const [cancellingDraft, setCancellingDraft] = useState(false)
 
-  const activeRegistrationId = registrationId ?? pendingDraft?.registrationId ?? null
-  const checkoutAmount = Number(checkoutItem?.amount ?? pendingDraft?.amount ?? 1)
-  const checkoutEventTitle = checkoutItem?.eventTitle ?? pendingDraft?.eventTitle ?? 'Event Registration'
-  const checkoutRaceType = checkoutItem?.raceType ?? pendingDraft?.raceType ?? '-'
+  const activeRegistrationId = registrationId
+  const checkoutAmount = Number(
+    checkoutItem?.amount ?? checkoutPayload?.registrationFee ?? 1,
+  )
+  const checkoutEventTitle =
+    checkoutItem?.eventTitle ?? checkoutPayload?.eventTitle ?? 'Event Registration'
+  const checkoutRaceType = checkoutItem?.raceType ?? checkoutPayload?.raceTypeLabel ?? '-'
 
   const merchantReference = useMemo(
     () => `HNA-${activeRegistrationId ?? 'NA'}-${Date.now()}`,
@@ -328,26 +335,12 @@ export function RegistrationPayment() {
   )
 
   useEffect(() => {
-    let mounted = true
-    setCheckingDraft(true)
-    void registrationService
-      .getPendingPaymentDraft(registrationId ?? undefined)
-      .then((draft) => {
-        if (!mounted) return
-        setPendingDraft(draft)
-        if (draft) setAgreed(true)
-      })
-      .catch((e) => {
-        if (!mounted) return
-        setError((e as Error).message || 'Failed to check pending payment draft.')
-      })
-      .finally(() => {
-        if (!mounted) return
-        setCheckingDraft(false)
-      })
-    return () => {
-      mounted = false
+    if (registrationId) {
+      clearRegistrationCheckoutPayload()
+      setCheckoutPayload(null)
+      return
     }
+    setCheckoutPayload(loadRegistrationCheckoutPayload())
   }, [registrationId])
 
   useEffect(() => {
@@ -404,19 +397,29 @@ export function RegistrationPayment() {
 
   const onSubmit = async () => {
     setError(null)
-    if (!activeRegistrationId) {
-      setError('Missing registrationId.')
-      return
-    }
     if (!agreed) {
       setError('Please accept the Agreement and Liability Waiver and Race Rules.')
       return
     }
+    const payload = checkoutPayload ?? loadRegistrationCheckoutPayload()
+    let regId = activeRegistrationId
+    if (!regId) {
+      if (!payload) {
+        setError('Your checkout session expired. Please go back to the registration form and submit again.')
+        return
+      }
+    }
     setSubmitting(true)
     try {
+      if (!regId) {
+        const created = await registrationService.createRegistration(payload!)
+        regId = created.registrationId
+        clearRegistrationCheckoutPayload()
+        setCheckoutPayload(null)
+      }
       const payment = await registrationService.createPaymentOrder({
-        registrationId: activeRegistrationId,
-        amount: 1,
+        registrationId: regId,
+        amount: checkoutAmount,
         merchantReference,
         acceptLiability: true,
         acceptRules: true,
@@ -430,72 +433,22 @@ export function RegistrationPayment() {
     }
   }
 
-  const onCancelDraft = async () => {
-    if (!pendingDraft) return
-    setError(null)
-    setCancellingDraft(true)
-    try {
-      await registrationService.cancelPendingPaymentDraft(pendingDraft.registrationId)
-      setPendingDraft(null)
-      // Redirect rider back to registration info so they can start fresh
-      void navigate('/register/info', { replace: true })
-    } catch (e) {
-      setError((e as Error).message || 'Failed to discard registration.')
-    } finally {
-      setCancellingDraft(false)
-    }
-  }
-
   return (
     <>
       <section className="bg-white px-4 py-10 text-slate-900">
         <div className="mx-auto max-w-[760px] space-y-6">
-          {checkingDraft ? (
-            <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-              Checking pending payment...
-            </div>
-          ) : null}
-          {!checkingDraft && pendingDraft ? (
-            <div className="rounded-xl border border-amber-200 bg-amber-50 p-5">
-              <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">Resume Payment</p>
-              <h2 className="mt-1 text-xl font-semibold text-amber-900">{pendingDraft.eventTitle}</h2>
-              <p className="mt-2 text-sm text-amber-800">
-                A pending payment was found. Continue to complete your transaction.
-              </p>
-              <div className="mt-3 grid gap-2 text-sm text-amber-900 sm:grid-cols-2">
-                <p>
-                  Status: <span className="font-semibold uppercase">{pendingDraft.status}</span>
-                </p>
-                <p>
-                  Total: <span className="font-semibold">PHP {pendingDraft.amount.toFixed(2)}</span>
-                </p>
-                <p>
-                  Race: <span className="font-semibold">{pendingDraft.raceType}</span>
-                </p>
-              </div>
-              <div className="mt-4 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => void onSubmit()}
-                  disabled={submitting}
-                  className="inline-flex items-center rounded-md bg-[#cfae3f] px-5 py-2.5 text-sm font-semibold text-black transition hover:bg-[#dab852] disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {submitting ? 'Redirecting…' : 'Continue Payment'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void onCancelDraft()}
-                  disabled={cancellingDraft}
-                  className="inline-flex items-center rounded-md border border-amber-300 bg-white px-5 py-2.5 text-sm font-semibold text-amber-900 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {cancellingDraft ? 'Discarding…' : 'Discard Registration'}
-                </button>
-              </div>
+          {!activeRegistrationId && !checkoutPayload ? (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              Start from the{' '}
+              <Link to="/register/info" className="font-semibold underline">
+                registration form
+              </Link>{' '}
+              to fill in your details. Your record is created when you proceed to PayMongo.
             </div>
           ) : null}
           {paymentState === 'cancelled' ? (
             <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-              Payment window was closed. Your transaction remains pending and can be resumed.
+              Payment was not completed. Return to the registration form if you need to try again with a new checkout.
             </div>
           ) : null}
           {paymentState === 'failed' ? (

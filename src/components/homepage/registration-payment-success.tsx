@@ -58,8 +58,8 @@ export function RegistrationPaymentSuccess() {
       ])
 
       const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height)
-      gradient.addColorStop(0, '#f8fafc')
-      gradient.addColorStop(1, '#e8eef8')
+      gradient.addColorStop(0, '#eff6ff')
+      gradient.addColorStop(1, '#ffffff')
       ctx.fillStyle = gradient
       ctx.fillRect(0, 0, canvas.width, canvas.height)
 
@@ -81,20 +81,22 @@ export function RegistrationPaymentSuccess() {
 
       ctx.fillStyle = '#001B44'
       ctx.fillRect(0, 0, canvas.width, 22)
-      ctx.fillStyle = '#0B5ED7'
+      ctx.fillStyle = '#1a2e6e'
       ctx.fillRect(0, canvas.height - 22, canvas.width, 22)
 
       ctx.fillStyle = '#F59E0B'
       ctx.beginPath()
-      ctx.moveTo(canvas.width - 220, 0)
+      ctx.moveTo(canvas.width - 100, 0)
       ctx.lineTo(canvas.width, 0)
-      ctx.lineTo(canvas.width, 140)
+      ctx.lineTo(canvas.width, 72)
       ctx.closePath()
       ctx.fill()
 
-      const logoStartX = 56
-      const logoY = 42
-      const logoHeight = 32
+      const leftColX = 56
+      const leftColWidth = Math.round(canvas.width * 0.6) - leftColX
+      const logoStartX = leftColX
+      const logoY = 44
+      const logoHeight = 56
       let cursorX = logoStartX
       if (allOutLogo) {
         const allOutWidth = Math.round((allOutLogo.width / Math.max(allOutLogo.height, 1)) * logoHeight)
@@ -106,20 +108,31 @@ export function RegistrationPaymentSuccess() {
         ctx.drawImage(hnaLogo, cursorX, logoY, hnaWidth, logoHeight)
       }
 
-      ctx.fillStyle = '#334155'
-      ctx.font = '600 24px Arial'
-      ctx.fillText('RACE CERTIFICATE', 56, 112)
+      const riderUpper = certificateData.riderName.toUpperCase()
+      const eventUpper = certificateData.eventTitle.toUpperCase()
 
+      let y = logoY + logoHeight + 16
       ctx.fillStyle = '#64748b'
-      ctx.font = '700 15px Arial'
-      ctx.fillText('RIDER NAME', 58, 236)
-      ctx.fillStyle = '#111827'
-      ctx.font = '700 58px Arial'
-      ctx.fillText(certificateData.riderName, 58, 292)
+      ctx.font = '700 11px Arial'
+      ctx.letterSpacing = '0.15em'
+      ctx.fillText('QR CODE · RACE CLAIM KIT', leftColX, y)
+      ctx.letterSpacing = '0'
 
-      ctx.fillStyle = '#1e3a8a'
-      ctx.font = '700 30px Arial'
-      ctx.fillText(certificateData.eventTitle, 58, 344)
+      y += 22
+      ctx.fillStyle = '#1d4ed8'
+      ctx.font = '700 13px Arial'
+      const eventMaxW = leftColWidth - 8
+      ctx.fillText(eventUpper, leftColX, y, eventMaxW)
+
+      y += 24
+      ctx.fillStyle = '#64748b'
+      ctx.font = '700 11px Arial'
+      ctx.fillText('RIDER NAME', leftColX, y)
+
+      y += 52
+      ctx.fillStyle = '#111827'
+      ctx.font = '800 56px Arial'
+      ctx.fillText(riderUpper, leftColX, y, eventMaxW)
 
       const drawLabelValue = (
         label: string,
@@ -141,60 +154,72 @@ export function RegistrationPaymentSuccess() {
         }
       }
 
-      // Dedicated bib-number block for stronger hierarchy and cleaner spacing.
-      drawRoundedRect(ctx, 56, 392, 360, 128, 18)
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.72)'
+      const bibBoxTop = y + 36
+      drawRoundedRect(ctx, leftColX, bibBoxTop, 360, 120, 18)
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.78)'
       ctx.fill()
       ctx.strokeStyle = 'rgba(203, 213, 225, 0.9)'
       ctx.lineWidth = 1.5
       ctx.stroke()
       ctx.fillStyle = '#475569'
-      ctx.font = '700 18px Arial'
-      ctx.fillText('BIB NUMBER', 78, 432)
+      ctx.font = '700 16px Arial'
+      ctx.fillText('BIB NUMBER', leftColX + 22, bibBoxTop + 36)
       ctx.fillStyle = '#0f172a'
-      ctx.font = '900 74px Arial'
-      ctx.fillText(certificateData.bibNumber, 76, 495)
+      ctx.font = '900 64px Arial'
+      ctx.fillText(certificateData.bibNumber, leftColX + 20, bibBoxTop + 96)
       ctx.fillStyle = '#475569'
-      ctx.font = '700 15px Arial'
-      ctx.fillText('CATEGORY CODE', 248, 432)
+      ctx.font = '700 14px Arial'
+      ctx.fillText('CATEGORY CODE', leftColX + 220, bibBoxTop + 34)
       ctx.fillStyle = '#0f172a'
-      ctx.font = '800 36px Arial'
-      ctx.fillText(certificateData.categoryCode, 248, 472)
-      drawLabelValue('CATEGORY', certificateData.category, 58, 542, '700 34px Arial', 480)
-      drawLabelValue('DISCIPLINE', certificateData.discipline, 560, 542, '700 34px Arial', 230)
-      drawLabelValue('EVENT TYPE', certificateData.eventType, 58, 592, '700 30px Arial', 680)
+      ctx.font = '800 32px Arial'
+      ctx.fillText(certificateData.categoryCode, leftColX + 220, bibBoxTop + 72)
+
+      const metaY = bibBoxTop + 120 + 32
+      drawLabelValue('CATEGORY', certificateData.category, leftColX, metaY, '700 32px Arial', 420)
+      drawLabelValue('DISCIPLINE', certificateData.discipline, 540, metaY, '700 32px Arial', 220)
+      drawLabelValue('EVENT TYPE', certificateData.eventType, leftColX, metaY + 52, '700 28px Arial', 640)
+
+      const qrSize = 192
+      const qrCardWidth = Math.round(canvas.width * 0.4) - 48
+      const qrCardX = leftColX + leftColWidth + 8
+      const qrCardY = 96
+      const qrPad = 24
+      const qrInnerTop = qrCardY + qrPad
+      const qrImgY = qrInnerTop
+      const qrImgX = qrCardX + (qrCardWidth - qrSize) / 2
+      const qrTextTop = qrImgY + qrSize + 20
+      const qrCardHeight = qrTextTop - qrCardY + 72
 
       const qrDataUrl = await QRCode.toDataURL(certificateData.qrValue, {
-        width: 360,
+        width: qrSize,
         margin: 1,
         color: { dark: '#111827', light: '#ffffff' },
       })
       const qrImage = await loadImage(qrDataUrl)
-      const qrCardX = 820
-      const qrCardY = 110
-      const qrCardWidth = 392
-      const qrCardHeight = 520
 
       ctx.save()
-      drawRoundedRect(ctx, qrCardX, qrCardY, qrCardWidth, qrCardHeight, 28)
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.94)'
+      drawRoundedRect(ctx, qrCardX, qrCardY, qrCardWidth, qrCardHeight, 24)
+      ctx.fillStyle = '#ffffff'
       ctx.fill()
-      ctx.shadowColor = 'rgba(2, 6, 23, 0.2)'
-      ctx.shadowBlur = 20
+      ctx.shadowColor = 'rgba(2, 6, 23, 0.12)'
+      ctx.shadowBlur = 16
+      ctx.shadowOffsetY = 4
       ctx.strokeStyle = 'rgba(203, 213, 225, 0.95)'
-      ctx.lineWidth = 2
+      ctx.lineWidth = 1.5
       ctx.stroke()
       ctx.restore()
 
-      ctx.drawImage(qrImage, qrCardX + 32, qrCardY + 44, 328, 328)
+      ctx.drawImage(qrImage, qrImgX, qrImgY, qrSize, qrSize)
+
       ctx.fillStyle = '#111827'
-      ctx.font = '800 36px Arial'
+      ctx.font = '900 40px Arial'
       const bibWidth = ctx.measureText(certificateData.bibNumber).width
-      ctx.fillText(certificateData.bibNumber, qrCardX + (qrCardWidth - bibWidth) / 2, qrCardY + 424)
-      ctx.fillStyle = '#475569'
-      ctx.font = '600 18px Arial'
+      ctx.fillText(certificateData.bibNumber, qrCardX + (qrCardWidth - bibWidth) / 2, qrTextTop + 28)
+
+      ctx.fillStyle = '#64748b'
+      ctx.font = '600 15px Arial'
       const regWidth = ctx.measureText(certificateData.verificationId).width
-      ctx.fillText(certificateData.verificationId, qrCardX + (qrCardWidth - regWidth) / 2, qrCardY + 454)
+      ctx.fillText(certificateData.verificationId, qrCardX + (qrCardWidth - regWidth) / 2, qrTextTop + 56)
 
       const fileType = mimeType === 'image/png' ? 'image/png' : 'image/jpeg'
       return canvas.toDataURL(fileType, 0.92)

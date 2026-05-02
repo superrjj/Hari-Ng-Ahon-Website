@@ -106,7 +106,7 @@ Deno.serve(async (req) => {
 
   if (registrationError) return textResponse(registrationError.message, 500)
   if (!registration) return textResponse('Registration not found', 404)
-  if (!['draft', 'pending_payment', 'payment_processing'].includes(registration.status)) {
+  if (!['pending_payment', 'payment_processing'].includes(registration.status)) {
     return textResponse('Registration is not payable in current status', 400)
   }
 
@@ -198,7 +198,7 @@ Deno.serve(async (req) => {
     .from('registration_forms')
     .update({ status: 'payment_processing', updated_at: new Date().toISOString() })
     .eq('id', body.registrationId)
-    .in('status', ['draft', 'pending_payment', 'payment_processing'])
+    .in('status', ['pending_payment', 'payment_processing'])
 
   if (statusUpdateError) return textResponse(statusUpdateError.message, 500)
 

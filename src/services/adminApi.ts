@@ -21,6 +21,7 @@ export interface AdminRegistrationRow {
   provider_reference?: string | null
   paid_at?: string | null
   user_id?: string | null
+  race_category_id?: string | null
 }
 
 export interface AdminRiderDetailRow {
@@ -57,7 +58,7 @@ export const adminApi = {
     // which can break when events is split into step tables.
     const { data: forms, error: formsError } = await supabase
       .from('registration_forms')
-      .select('id, created_at, status, registrant_email, user_id, event_id, bib_number')
+      .select('id, created_at, status, registrant_email, user_id, event_id, bib_number, race_category_id')
       .order('created_at', { ascending: false })
       .limit(200)
 
@@ -166,6 +167,7 @@ export const adminApi = {
         provider_reference: order?.provider_reference ?? null,
         paid_at: tx?.paid_at ?? null,
         user_id: f.user_id ?? null,
+        race_category_id: f.race_category_id ?? null,
       } satisfies AdminRegistrationRow
     })
   },

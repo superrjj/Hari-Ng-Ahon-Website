@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { api } from '../../services/api'
 import { supabase } from '../../lib/supabase'
-import { registrationService } from '../../services/registrationService'
 import type { Event } from '../../types'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -78,8 +77,6 @@ export function RegistrationInfo() {
   const [events, setEvents] = useState<Event[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [pendingRegistrationId, setPendingRegistrationId] = useState<string | null>(null)
-
   // disciplines fetched from race_categories
   const [disciplineGroups, setDisciplineGroups] = useState<DisciplineGroup[]>([])
   const [categoriesLoading, setCategoriesLoading] = useState(false)
@@ -105,26 +102,6 @@ export function RegistrationInfo() {
       })
     return () => { active = false }
   }, [])
-
-  // ── Fetch pending draft ────────────────────────────────────────────────────
-  useEffect(() => {
-    if (!session) {
-      setPendingRegistrationId(null)
-      return
-    }
-    let active = true
-    void registrationService
-      .getPendingPaymentDraft()
-      .then((draft) => {
-        if (!active) return
-        setPendingRegistrationId(draft?.registrationId ?? null)
-      })
-      .catch(() => {
-        if (!active) return
-        setPendingRegistrationId(null)
-      })
-    return () => { active = false }
-  }, [session])
 
   const selectedEvent = useMemo(() => events[0] ?? null, [events])
 
@@ -184,11 +161,9 @@ export function RegistrationInfo() {
     : 'TBA'
   const eventRace = selectedEvent?.race_type ?? 'Race'
   const registrationFee = Number(selectedEvent?.registration_fee ?? 0)
-  const nextPath = pendingRegistrationId
-    ? `/register/payment?registrationId=${encodeURIComponent(pendingRegistrationId)}`
-    : selectedEvent
-      ? `/register/form?eventId=${encodeURIComponent(selectedEvent.id)}`
-      : '/register/form'
+  const nextPath = selectedEvent
+    ? `/register/form?eventId=${encodeURIComponent(selectedEvent.id)}`
+    : '/register/form'
 
   return (
     <section className="bg-white px-4 py-8 text-slate-900 sm:px-6 sm:py-10 lg:px-8">
