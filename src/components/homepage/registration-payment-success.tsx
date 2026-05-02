@@ -1,6 +1,7 @@
 import QRCode from 'qrcode'
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
+import { useAuth } from '../../hooks/useAuth'
 import { registrationService, type RegistrationCertificateData } from '../../services/registrationService'
 
 async function loadImage(src: string): Promise<HTMLImageElement> {
@@ -37,12 +38,14 @@ function drawRoundedRect(
 export function RegistrationPaymentSuccess() {
   const [params] = useSearchParams()
   const registrationId = params.get('registrationId')
+  const { session, loading: authLoading } = useAuth()
   const [loading, setLoading] = useState(Boolean(registrationId))
   const [error, setError] = useState<string | null>(null)
   const [certificateData, setCertificateData] = useState<RegistrationCertificateData | null>(null)
   const [checkingStatus, setCheckingStatus] = useState(false)
   const [certificatePreviewUrl, setCertificatePreviewUrl] = useState<string | null>(null)
   const [autoEmailMessage, setAutoEmailMessage] = useState<string | null>(null)
+  const [needsLoginToFinalize, setNeedsLoginToFinalize] = useState(false)
 
   const createCertificateDataUrl = useCallback(
     async (mimeType: 'image/png' | 'image/jpeg') => {
@@ -252,8 +255,16 @@ export function RegistrationPaymentSuccess() {
         await fetchCertificateData()
         return
       }
+      if (authLoading) return
+
+      if (!session?.access_token) {
+        setNeedsLoginToFinalize(true)
+        await fetchCertificateData()
+        return
+      }
+
+      setNeedsLoginToFinalize(false)
       try {
-        // Business choice: trust PayMongo success redirect and mark as paid immediately.
         await registrationService.markRegistrationAsPaidAfterPaymongoRedirect(registrationId)
       } catch (e) {
         if (mounted) {
@@ -267,7 +278,7 @@ export function RegistrationPaymentSuccess() {
     return () => {
       mounted = false
     }
-  }, [fetchCertificateData, registrationId])
+  }, [authLoading, fetchCertificateData, registrationId, session?.access_token])
 
   const handleDownload = useCallback(
     async (mimeType: 'image/png' | 'image/jpeg') => {
@@ -276,7 +287,8 @@ export function RegistrationPaymentSuccess() {
       const a = document.createElement('a')
       const extension = mimeType === 'image/png' ? 'png' : 'jpg'
       a.href = url
-      a.download = `hari-ng-ahon-certificate-${certificateData.bibNumber}.${extension}`
+      const bibSlug = certificateData.bibNumber?.trim() || certificateData.verificationId.replace(/[^a-zA-Z0-9-]/g, '')
+      a.download = `hari-ng-ahon-certificate-${bibSlug}.${extension}`
       document.body.appendChild(a)
       a.click()
       a.remove()
@@ -286,12 +298,20 @@ export function RegistrationPaymentSuccess() {
 
   const refreshPaymentStatus = useCallback(async () => {
     setCheckingStatus(true)
+    setError(null)
     try {
+      if (registrationId && session?.access_token) {
+        try {
+          await registrationService.markRegistrationAsPaidAfterPaymongoRedirect(registrationId)
+        } catch (e) {
+          setError((e as Error).message || 'Failed to finalize payment.')
+        }
+      }
       await fetchCertificateData()
     } finally {
       setCheckingStatus(false)
     }
-  }, [fetchCertificateData])
+  }, [fetchCertificateData, registrationId, session?.access_token])
 
   useEffect(() => {
     let mounted = true
@@ -371,9 +391,41 @@ export function RegistrationPaymentSuccess() {
               disabled={checkingStatus}
               className="inline-flex items-center rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
             >
-              {checkingStatus ? 'Refreshing...' : 'Refresh Payment Status'}
+              {checkingStatus ? 'Refreshing...' : 'Refresh / assign bib'}
             </button>
           </div>
+
+          {needsLoginToFinalize && registrationId ? (
+            <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+              <p className="font-semibold">Log in to assign your race bib</p>
+              <p className="mt-1 text-amber-900">
+                Payment can be confirmed in PayMongo before your bib is written. Finalizing requires the same account you
+                used to register (the Edge Function verifies your identity).
+              </p>
+              <Link
+                to={`/auth?redirect=${encodeURIComponent(`/register/payment-success?registrationId=${encodeURIComponent(registrationId)}`)}`}
+                className="mt-3 inline-flex rounded-md bg-amber-600 px-4 py-2 text-xs font-semibold text-white hover:bg-amber-700"
+              >
+                Log in to complete bib assignment
+              </Link>
+            </div>
+          ) : null}
+
+          {certificateData?.isPaid && !certificateData?.bibNumber?.trim() && session?.access_token ? (
+            <div className="mt-3 rounded-lg border border-sky-200 bg-sky-50 p-3 text-sm text-sky-950">
+              <p>
+                Bib not showing yet? Payment may still be syncing.{' '}
+                <button
+                  type="button"
+                  className="font-semibold text-sky-800 underline hover:text-sky-950"
+                  onClick={() => void refreshPaymentStatus()}
+                  disabled={checkingStatus}
+                >
+                  Tap to retry finalize
+                </button>
+              </p>
+            </div>
+          ) : null}
 
           {loading ? <p className="mt-3 text-sm text-slate-600">Loading registration and payment details...</p> : null}
           {error ? <p className="mt-3 text-sm text-rose-600">{error}</p> : null}
@@ -384,7 +436,10 @@ export function RegistrationPaymentSuccess() {
                   Rider: <span className="font-semibold text-slate-900">{certificateData.riderName}</span>
                 </p>
                 <p>
-                  Bib: <span className="font-semibold text-slate-900">{certificateData.bibNumber}</span>
+                  Bib:{' '}
+                  <span className="font-semibold text-slate-900">
+                    {certificateData.bibNumber?.trim() ? certificateData.bibNumber : '— (assign after login / refresh)'}
+                  </span>
                 </p>
                 <p>
                   Category: <span className="font-semibold text-slate-900">{certificateData.category}</span>

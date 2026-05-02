@@ -112,15 +112,6 @@ async function getAuthHeaders(): Promise<Record<string, string>>{
   return token ? { Authorization: `Bearer ${token}` } : {}
 }
 
-function extractBibSequenceByPrefix(bibNumber: string, prefix: string) {
-  const value = String(bibNumber ?? '').trim()
-  const escapedPrefix = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const match = value.match(new RegExp(`^${escapedPrefix}(\\d+)$`))
-  if (!match) return 0
-  const n = Number.parseInt(match[1], 10)
-  return Number.isFinite(n) ? n : 0
-}
-
 function getStableVerificationToken(input: {
   registrationId: string
   paymentOrderId?: string | null
@@ -267,113 +258,28 @@ export const registrationService = {
   },
 
   async markRegistrationAsPaidAfterPaymongoRedirect(registrationId: string) {
-    const now = new Date().toISOString()
-
-    const { data: order, error: orderLookupError } = await supabase
-      .from('payment_orders')
-      .select('id, status, amount, currency, provider_reference')
-      .eq('registration_id', registrationId)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-    if (orderLookupError) throw orderLookupError
-    if (!order?.id) throw new Error('Payment order not found for registration.')
-
-    if (String(order.status).toLowerCase() !== 'paid') {
-      const { error: orderUpdateError } = await supabase
-        .from('payment_orders')
-        .update({
-          status: 'paid',
-          paid_at: now,
-          updated_at: now,
-        })
-        .eq('id', order.id)
-      if (orderUpdateError) throw orderUpdateError
-
-      const { error: txInsertError } = await supabase.from('payment_transactions').insert({
-        payment_order_id: order.id,
-        status: 'paid',
-        amount: Number(order.amount ?? 0),
-        currency: String(order.currency ?? 'PHP'),
-        paid_at: now,
-        provider_event_type: 'checkout_success_redirect',
-        provider_reference: order.provider_reference ?? null,
-        raw_payload: {
-          source: 'client_success_redirect',
-          registration_id: registrationId,
-        },
-      })
-      if (txInsertError) throw txInsertError
+    const headers = await getAuthHeaders()
+    const { data, error } = await supabase.functions.invoke('finalize-paymongo-success', {
+      headers,
+      body: { registrationId },
+    })
+    if (error) {
+      const raw = await getEdgeFunctionErrorMessage(error, 'Unable to finalize payment and assign bib.')
+      let msg = raw
+      if (raw.trim().startsWith('{')) {
+        try {
+          const parsed = JSON.parse(raw) as { error?: string; message?: string }
+          if (parsed?.error) msg = String(parsed.error)
+          else if (parsed?.message) msg = String(parsed.message)
+        } catch {
+          /* keep raw */
+        }
+      }
+      throw new Error(msg)
     }
-
-    const { error: registrationUpdateError } = await supabase
-      .from('registration_forms')
-      .update({
-        status: 'confirmed',
-        confirmed_at: now,
-        updated_at: now,
-      })
-      .eq('id', registrationId)
-    if (registrationUpdateError) throw registrationUpdateError
-
-    const { data: regForBib, error: regForBibError } = await supabase
-      .from('registration_forms')
-      .select('id, race_category_id, bib_number')
-      .eq('id', registrationId)
-      .maybeSingle()
-    if (regForBibError) throw regForBibError
-    if (!regForBib) throw new Error('Registration record not found.')
-
-    if (!String(regForBib.bib_number ?? '').trim()) {
-      if (!regForBib.race_category_id) {
-        throw new Error('Missing race category for this registration.')
-      }
-
-      const { data: raceCategory, error: raceCategoryError } = await supabase
-        .from('race_categories')
-        .select('code, category_name, rider_limit')
-        .eq('id', regForBib.race_category_id)
-        .maybeSingle()
-      if (raceCategoryError) throw raceCategoryError
-
-      const categoryCode = String(raceCategory?.code ?? '').trim()
-      if (!categoryCode) throw new Error('Missing category code for this registration category.')
-
-      const { data: existingBibs, error: existingBibsError } = await supabase
-        .from('registration_forms')
-        .select('bib_number')
-        .eq('race_category_id', regForBib.race_category_id)
-        .eq('status', 'confirmed')
-        .not('bib_number', 'is', null)
-        .order('created_at', { ascending: true })
-        .limit(5000)
-      if (existingBibsError) throw existingBibsError
-
-      const maxSequence = (existingBibs ?? []).reduce((max, row) => {
-        const seq = extractBibSequenceByPrefix(String(row.bib_number ?? ''), categoryCode)
-        return seq > max ? seq : max
-      }, 0)
-      const nextSequence = maxSequence + 1
-      const riderLimit = Number(raceCategory?.rider_limit ?? 0)
-      if (Number.isFinite(riderLimit) && riderLimit > 0 && nextSequence > riderLimit) {
-        throw new Error(
-          `Category limit reached for ${String(raceCategory?.category_name ?? categoryCode)}. Max riders: ${riderLimit}.`,
-        )
-      }
-      if (nextSequence > 99) {
-        throw new Error(`Category bib sequence exceeded 2 digits for category code ${categoryCode}.`)
-      }
-      const generatedBib = `${categoryCode}${String(nextSequence).padStart(2, '0')}`
-
-      const { error: bibUpdateError } = await supabase
-        .from('registration_forms')
-        .update({
-          bib_number: generatedBib,
-          updated_at: now,
-        })
-        .eq('id', regForBib.id)
-      if (bibUpdateError) throw bibUpdateError
-    }
+    const payload = data as { ok?: boolean; bib_number?: string; error?: string } | null
+    if (payload?.error) throw new Error(String(payload.error))
+    if (!payload?.ok) throw new Error('Payment finalization returned an unexpected response.')
   },
 
   async getRegistrationCertificateData(registrationId: string): Promise<RegistrationCertificateData | null> {
