@@ -322,12 +322,35 @@ export function RegistrationPayment() {
   const [checkoutItem, setCheckoutItem] = useState<CheckoutItem | null>(null)
 
   const activeRegistrationId = registrationId
-  const checkoutAmount = Number(
-    checkoutItem?.amount ?? checkoutPayload?.registrationFee ?? 1,
-  )
+
+  const checkoutLineCount =
+    checkoutItem?.lineItemCount ?? Math.max(checkoutPayload?.eventEntries?.length ?? 1, 1)
+
+  const checkoutAmount = useMemo(() => {
+    const itemAmt = checkoutItem?.amount
+    if (typeof itemAmt === 'number' && Number.isFinite(itemAmt) && itemAmt > 0) return itemAmt
+
+    const p = checkoutPayload
+    if (!p) return 1
+    const total = Number(p.registrationFeeTotal)
+    if (Number.isFinite(total) && total > 0) return total
+    const per = Number(p.registrationFeePerEntry)
+    const n = Math.max(p.eventEntries?.length ?? 1, 1)
+    if (Number.isFinite(per) && per > 0) return per * n
+    return 1
+  }, [checkoutItem, checkoutPayload])
+
   const checkoutEventTitle =
     checkoutItem?.eventTitle ?? checkoutPayload?.eventTitle ?? 'Event Registration'
-  const checkoutRaceType = checkoutItem?.raceType ?? checkoutPayload?.raceTypeLabel ?? '-'
+
+  const checkoutRaceType = useMemo(() => {
+    if (checkoutItem?.raceType?.trim()) return checkoutItem.raceType
+    const p = checkoutPayload
+    const fromEntries = p?.eventEntries?.map((e) => String(e.label ?? '').trim()).filter(Boolean).join(', ')
+    if (fromEntries) return fromEntries
+    const rt = p?.raceType ? String(p.raceType).trim() : ''
+    return rt || p?.raceTypeLabel || '-'
+  }, [checkoutItem, checkoutPayload])
 
   const merchantReference = useMemo(
     () => `HNA-${activeRegistrationId ?? 'NA'}-${Date.now()}`,
@@ -401,25 +424,61 @@ export function RegistrationPayment() {
       setError('Please accept the Agreement and Liability Waiver and Race Rules.')
       return
     }
-    const payload = checkoutPayload ?? loadRegistrationCheckoutPayload()
-    let regId = activeRegistrationId
-    if (!regId) {
-      if (!payload) {
-        setError('Your checkout session expired. Please go back to the registration form and submit again.')
-        return
-      }
+    const payloadHydrated = checkoutPayload ?? loadRegistrationCheckoutPayload()
+    let regId = activeRegistrationId ?? ''
+    if (!regId && !payloadHydrated) {
+      setError('Your checkout session expired. Please go back to the registration form and submit again.')
+      return
     }
     setSubmitting(true)
     try {
+      let paymentAmount = checkoutAmount
+
       if (!regId) {
-        const created = await registrationService.createRegistration(payload!)
-        regId = created.registrationId
+        const normalized = loadRegistrationCheckoutPayload() ?? checkoutPayload ?? payloadHydrated
+        if (!normalized) throw new Error('Checkout session expired.')
+        const entries =
+          normalized.eventEntries?.length > 0
+            ? normalized.eventEntries
+            : [{ slug: '', label: String(normalized.raceType ?? 'Event') }]
+        const n = Math.max(entries.length, 1)
+        let perEntry = Number(normalized.registrationFeePerEntry)
+        if (!(perEntry > 0)) perEntry = n > 0 ? Number(normalized.registrationFeeTotal) / n : 1
+        if (!(perEntry > 0)) perEntry = 1
+        const totalDeclared = Number(normalized.registrationFeeTotal)
+        paymentAmount = Number.isFinite(totalDeclared) && totalDeclared > 0 ? totalDeclared : perEntry * n
+
+        let primaryId = ''
+        const bundleId = normalized.checkoutBundleId
+        for (const entry of entries) {
+          const slugRaw = entry.slug?.trim()
+          const slug = slugRaw ? slugRaw : null
+          const label =
+            entry.label?.trim() ||
+            String(normalized.raceType ?? normalized.raceTypeLabel ?? '').trim() ||
+            'Event'
+          const { registrationId: newId } = await registrationService.createRegistration({
+            raceType: label,
+            eventId: normalized.eventId,
+            raceCategoryId: normalized.raceCategoryId,
+            registrantEmail: normalized.registrantEmail,
+            registrationFee: perEntry,
+            checkoutBundleId: bundleId,
+            entryEventTypeSlug: slug,
+            entryEventTypeLabel: label,
+            rider: normalized.rider,
+          })
+          if (!primaryId) primaryId = newId
+        }
+        regId = primaryId
         clearRegistrationCheckoutPayload()
         setCheckoutPayload(null)
+        void navigate(`/register/payment?registrationId=${encodeURIComponent(regId)}`, { replace: true })
       }
+
       const payment = await registrationService.createPaymentOrder({
         registrationId: regId,
-        amount: checkoutAmount,
+        amount: paymentAmount,
         merchantReference,
         acceptLiability: true,
         acceptRules: true,
@@ -472,7 +531,7 @@ export function RegistrationPayment() {
             <div className="flex items-center justify-between gap-3">
               <h2 className="text-lg font-semibold text-slate-900">Item Checkout</h2>
               <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
-                1 item
+                {checkoutLineCount} item{checkoutLineCount === 1 ? '' : 's'}
               </span>
             </div>
             <div className="mt-4 rounded-lg border border-slate-100 bg-slate-50 p-4">

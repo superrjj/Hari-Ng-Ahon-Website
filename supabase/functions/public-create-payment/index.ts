@@ -18,6 +18,7 @@ function textResponse(message: string, status: number) {
 
 type Body = {
   registrationId: string
+  amount?: number
   acceptLiability: boolean
   acceptRules: boolean
 }
@@ -100,7 +101,7 @@ Deno.serve(async (req) => {
 
   const { data: registration, error: registrationError } = await supabase
     .from('registration_forms')
-    .select('id, registration_fee, status')
+    .select('id, registration_fee, status, checkout_bundle_id, user_id')
     .eq('id', body.registrationId)
     .maybeSingle()
 
@@ -109,6 +110,26 @@ Deno.serve(async (req) => {
   if (!['pending_payment', 'payment_processing'].includes(registration.status)) {
     return textResponse('Registration is not payable in current status', 400)
   }
+
+  const clientAmount = Number(body.amount ?? 0)
+  const fallbackFee = Number(registration.registration_fee ?? 0)
+  const resolvedAmount =
+    Number.isFinite(clientAmount) && clientAmount > 0 ? clientAmount : fallbackFee > 0 ? fallbackFee : 0
+
+  async function bundleTotalIfNeeded(): Promise<number> {
+    if (!registration.checkout_bundle_id || !registration.user_id) return resolvedAmount
+    const { data: rows, error: sumErr } = await supabase
+      .from('registration_forms')
+      .select('registration_fee')
+      .eq('checkout_bundle_id', registration.checkout_bundle_id)
+      .eq('user_id', registration.user_id)
+    if (sumErr || !rows?.length) return resolvedAmount
+    const sum = rows.reduce((s, r) => s + Number(r.registration_fee ?? 0), 0)
+    return sum > 0 ? sum : resolvedAmount
+  }
+
+  let chargeAmount = resolvedAmount > 0 ? resolvedAmount : await bundleTotalIfNeeded()
+  if (!(chargeAmount > 0)) chargeAmount = fallbackFee > 0 ? fallbackFee : 1
 
   const { error: agreementError } = await supabase
     .from('registration_agreements')
@@ -131,7 +152,7 @@ Deno.serve(async (req) => {
   // Reuse an in-flight order if one already exists for this registration.
   const { data: existingOrder, error: existingOrderError } = await supabase
     .from('payment_orders')
-    .select('id, merchant_reference, status')
+    .select('id, merchant_reference, status, amount')
     .eq('registration_id', body.registrationId)
     .in('status', ['created', 'pending', 'processing'])
     .order('created_at', { ascending: false })
@@ -141,8 +162,9 @@ Deno.serve(async (req) => {
   if (existingOrderError) return textResponse(existingOrderError.message, 500)
   if (existingOrder?.id) {
     try {
+      const reuseAmt = Number(existingOrder.amount ?? 0) || chargeAmount
       const checkout = await createPayMongoCheckoutSession({
-        amount: Number(registration.registration_fee ?? 0),
+        amount: reuseAmt,
         registrationId: body.registrationId,
         merchantReference: existingOrder.merchant_reference,
         email: form?.registrant_email ?? null,
@@ -165,12 +187,15 @@ Deno.serve(async (req) => {
 
   const merchantReference = `HNA-${Date.now()}-${crypto.randomUUID()}`
 
+  const bundleIdInsert = registration.checkout_bundle_id ? String(registration.checkout_bundle_id) : null
+
   const { data: order, error: orderError } = await supabase
     .from('payment_orders')
     .insert({
       registration_id: body.registrationId,
+      checkout_bundle_id: bundleIdInsert,
       provider: 'paymongo',
-      amount: Number(registration.registration_fee ?? 0),
+      amount: chargeAmount,
       currency: 'PHP',
       status: 'created',
       merchant_reference: merchantReference,
@@ -184,7 +209,7 @@ Deno.serve(async (req) => {
   let checkout
   try {
     checkout = await createPayMongoCheckoutSession({
-      amount: Number(registration.registration_fee ?? 0),
+      amount: chargeAmount,
       registrationId: body.registrationId,
       merchantReference,
       email: form?.registrant_email ?? null,
@@ -194,11 +219,24 @@ Deno.serve(async (req) => {
     return textResponse((e as Error).message, 500)
   }
 
-  const { error: statusUpdateError } = await supabase
-    .from('registration_forms')
-    .update({ status: 'payment_processing', updated_at: new Date().toISOString() })
-    .eq('id', body.registrationId)
-    .in('status', ['pending_payment', 'payment_processing'])
+  const stamp = new Date().toISOString()
+  let statusUpdateError
+  if (registration.checkout_bundle_id && registration.user_id) {
+    const r = await supabase
+      .from('registration_forms')
+      .update({ status: 'payment_processing', updated_at: stamp })
+      .eq('user_id', registration.user_id)
+      .eq('checkout_bundle_id', registration.checkout_bundle_id)
+      .in('status', ['pending_payment', 'payment_processing'])
+    statusUpdateError = r.error
+  } else {
+    const r = await supabase
+      .from('registration_forms')
+      .update({ status: 'payment_processing', updated_at: stamp })
+      .eq('id', body.registrationId)
+      .in('status', ['pending_payment', 'payment_processing'])
+    statusUpdateError = r.error
+  }
 
   if (statusUpdateError) return textResponse(statusUpdateError.message, 500)
 

@@ -16,11 +16,14 @@ function textResponse(message: string, status: number) {
 }
 
 type Body = {
-  raceType: 'criterium' | 'itt' | 'road_race'
+  raceType?: string
   eventId?: string
   raceCategoryId?: string
   registrantEmail: string
   registrationFee?: number
+  checkoutBundleId?: string | null
+  entryEventTypeSlug?: string | null
+  entryEventTypeLabel?: string | null
   rider: {
     firstName: string
     lastName: string
@@ -108,13 +111,21 @@ Deno.serve(async (req) => {
     resolvedRaceCategoryId = raceCategory.id
   }
 
+  const slugTrim =
+    typeof body.entryEventTypeSlug === 'string' ? String(body.entryEventTypeSlug).trim() || null : body.entryEventTypeSlug ?? null
+  const bundleStr = typeof body.checkoutBundleId === 'string' ? String(body.checkoutBundleId).trim() || null : null
+
   if (resolvedRaceCategoryId) {
-    const { data: sameCombo, error: dupLookupError } = await supabase
+    let dupQuery = supabase
       .from('registration_forms')
       .select('id')
       .eq('user_id', userId)
       .eq('event_id', event.id)
       .eq('race_category_id', resolvedRaceCategoryId)
+    if (slugTrim) dupQuery = dupQuery.eq('entry_event_type_slug', slugTrim)
+    else dupQuery = dupQuery.is('entry_event_type_slug', null)
+
+    const { data: sameCombo, error: dupLookupError } = await dupQuery
     if (dupLookupError) return textResponse(dupLookupError.message, 500)
     const siblingIds = (sameCombo ?? []).map((r) => r.id).filter(Boolean)
     if (siblingIds.length > 0) {
@@ -141,6 +152,9 @@ Deno.serve(async (req) => {
   const registrationAttemptId = createAttemptId()
   const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString()
 
+  const labelTrim =
+    typeof body.entryEventTypeLabel === 'string' ? String(body.entryEventTypeLabel).trim().slice(0, 320) || null : null
+
   const { data: form, error: formError } = await supabase
     .from('registration_forms')
     .insert({
@@ -152,6 +166,9 @@ Deno.serve(async (req) => {
       registrant_email: normalizedEmail,
       submitted_at: new Date().toISOString(),
       expires_at: expiresAt,
+      checkout_bundle_id: bundleStr,
+      entry_event_type_slug: slugTrim,
+      entry_event_type_label: labelTrim,
     })
     .select('id')
     .single()

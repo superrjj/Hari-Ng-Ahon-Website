@@ -46,6 +46,15 @@ export function RegistrationPaymentSuccess() {
   const [certificatePreviewUrl, setCertificatePreviewUrl] = useState<string | null>(null)
   const [autoEmailMessage, setAutoEmailMessage] = useState<string | null>(null)
   const [needsLoginToFinalize, setNeedsLoginToFinalize] = useState(false)
+  const [bundleSiblingCertState, setBundleSiblingCertState] = useState<{
+    registrationIdForRows: string | null
+    rows: Array<{ id: string; entry_event_type_label: string | null }>
+  }>({ registrationIdForRows: null, rows: [] })
+
+  const siblingCertsToRender =
+    registrationId && bundleSiblingCertState.registrationIdForRows === registrationId
+      ? bundleSiblingCertState.rows
+      : []
 
   const createCertificateDataUrl = useCallback(
     async (mimeType: 'image/png' | 'image/jpeg') => {
@@ -97,9 +106,27 @@ export function RegistrationPaymentSuccess() {
 
       const leftColX = 56
       const leftColWidth = Math.round(canvas.width * 0.6) - leftColX
-      const logoStartX = leftColX
-      const logoY = 44
       const logoHeight = 56
+
+      // Measure total content height to vertically center the block
+      const totalContentHeight =
+        logoHeight + 16 +   // logo + gap
+        22 +                // "QR CODE · RACE CLAIM KIT"
+        24 +                // event title
+        11 +                // "RIDER NAME" label
+        52 +                // rider name
+        36 +                // gap before bib box
+        120 +               // bib box height
+        32 +                // gap before meta
+        42 + 15 +           // CATEGORY label+value
+        52 +                // EVENT TYPE offset
+        42 + 15             // EVENT TYPE label+value
+
+      const usableTop = 22
+      const usableBottom = canvas.height - 22
+      const logoY = Math.round(usableTop + (usableBottom - usableTop - totalContentHeight) / 2)
+
+      const logoStartX = leftColX
       let cursorX = logoStartX
       if (allOutLogo) {
         const allOutWidth = Math.round((allOutLogo.width / Math.max(allOutLogo.height, 1)) * logoHeight)
@@ -170,12 +197,7 @@ export function RegistrationPaymentSuccess() {
       ctx.fillStyle = '#0f172a'
       ctx.font = '900 64px Arial'
       ctx.fillText(certificateData.bibNumber, leftColX + 20, bibBoxTop + 96)
-      ctx.fillStyle = '#475569'
-      ctx.font = '700 14px Arial'
-      ctx.fillText('CATEGORY CODE', leftColX + 220, bibBoxTop + 34)
-      ctx.fillStyle = '#0f172a'
-      ctx.font = '800 32px Arial'
-      ctx.fillText(certificateData.categoryCode, leftColX + 220, bibBoxTop + 72)
+      // REMOVED: category code label and value
 
       const metaY = bibBoxTop + 120 + 32
       drawLabelValue('CATEGORY', certificateData.category, leftColX, metaY, '700 32px Arial', 420)
@@ -185,13 +207,15 @@ export function RegistrationPaymentSuccess() {
       const qrSize = 192
       const qrCardWidth = Math.round(canvas.width * 0.4) - 48
       const qrCardX = leftColX + leftColWidth + 8
-      const qrCardY = 96
       const qrPad = 24
+      // FIXED: qrCardHeight fully contains QR image + bib number + reg ID + padding
+      const qrCardHeight = qrPad + qrSize + 20 + 48 + 28 + qrPad
+      // Center the QR card vertically (reuse usableTop/usableBottom declared above)
+      const qrCardY = Math.round(usableTop + (usableBottom - usableTop - qrCardHeight) / 2)
       const qrInnerTop = qrCardY + qrPad
       const qrImgY = qrInnerTop
       const qrImgX = qrCardX + (qrCardWidth - qrSize) / 2
       const qrTextTop = qrImgY + qrSize + 20
-      const qrCardHeight = qrTextTop - qrCardY + 72
 
       const qrDataUrl = await QRCode.toDataURL(certificateData.qrValue, {
         width: qrSize,
@@ -245,6 +269,27 @@ export function RegistrationPaymentSuccess() {
       setError((e as Error).message || 'Unable to load payment status.')
     } finally {
       setLoading(false)
+    }
+  }, [registrationId])
+
+  useEffect(() => {
+    if (!registrationId) return
+    let cancelled = false
+    void registrationService
+      .listCheckoutBundleCertificates(registrationId)
+      .then((rows) => {
+        if (cancelled) return
+        setBundleSiblingCertState({
+          registrationIdForRows: registrationId,
+          rows: rows.filter((r) => r.id !== registrationId),
+        })
+      })
+      .catch(() => {
+        if (cancelled) return
+        setBundleSiblingCertState({ registrationIdForRows: registrationId, rows: [] })
+      })
+    return () => {
+      cancelled = true
     }
   }, [registrationId])
 
@@ -458,6 +503,27 @@ export function RegistrationPaymentSuccess() {
                 </div>
               ) : null}
 
+              {siblingCertsToRender.length > 0 ? (
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-800">
+                  <p className="font-semibold text-slate-900">Other registrations in this payment</p>
+                  <p className="mt-1 text-xs text-slate-600">
+                    Each event has its own bib and QR certificate. Open each link after payment completes.
+                  </p>
+                  <ul className="mt-3 list-disc space-y-1 pl-5">
+                    {siblingCertsToRender.map((row) => (
+                      <li key={row.id}>
+                        <Link
+                          to={`/register/payment-success?registrationId=${encodeURIComponent(row.id)}`}
+                          className="font-medium text-green-700 underline hover:text-green-900"
+                        >
+                          {String(row.entry_event_type_label ?? 'Event').trim() || 'Certificate'}
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
               {autoEmailMessage ? <p className="text-sm text-slate-600">{autoEmailMessage}</p> : null}
             </div>
           ) : null}
@@ -482,4 +548,3 @@ export function RegistrationPaymentSuccess() {
     </section>
   )
 }
-

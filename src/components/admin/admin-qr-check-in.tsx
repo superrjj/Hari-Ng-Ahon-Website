@@ -43,6 +43,21 @@ function statusBadgeClass(value: unknown) {
   return 'bg-slate-50 text-slate-700 border-slate-200'
 }
 
+/** Human-readable event type: prefers stored rider label; otherwise formats event `race_type` (not raw slug). */
+function formatEventTypeForDisplay(entryLabel: string | null | undefined, eventRaceTypeFallback: string | null | undefined) {
+  const label = String(entryLabel ?? '').trim()
+  if (label) return label
+  const first = String(eventRaceTypeFallback ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)[0]
+  if (!first) return '—'
+  return first
+    .split(/[_-]/)
+    .map((word) => (word ? word.charAt(0).toUpperCase() + word.slice(1).toLowerCase() : ''))
+    .join(' ')
+}
+
 function extractBibFromCode(code: string) {
   const trimmed = code.trim()
   if (!trimmed) return ''
@@ -62,6 +77,40 @@ function extractBibFromCode(code: string) {
   if (compactMatch?.[1]) return compactMatch[1].trim()
   return trimmed
 }
+
+function RiderKitDetailRows({ result }: { result: ScanResult }) {
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-3 text-sm">
+        <p className="text-slate-500">Rider name</p>
+        <p className="text-right font-semibold text-slate-900">{result.riderName ?? '—'}</p>
+      </div>
+      <div className="flex items-center justify-between gap-3 text-sm">
+        <p className="text-slate-500">Category</p>
+        <p className="text-right font-semibold text-slate-900">{result.category ?? '—'}</p>
+      </div>
+      <div className="flex items-center justify-between gap-3 text-sm">
+        <p className="text-slate-500">Bib number</p>
+        <p className="text-right font-semibold text-slate-900">{result.bibNumber ?? result.code}</p>
+      </div>
+      <div className="flex items-center justify-between gap-3 text-sm">
+        <p className="text-slate-500">Discipline</p>
+        <p className="text-right font-semibold text-slate-900">{result.discipline ?? '—'}</p>
+      </div>
+      <div className="flex items-center justify-between gap-3 text-sm">
+        <p className="text-slate-500">Event type</p>
+        <p className="text-right font-semibold text-slate-900">{result.eventType ?? '—'}</p>
+      </div>
+      <div className="flex items-center justify-between gap-3 text-sm">
+        <p className="text-slate-500">Event</p>
+        <p className="text-right font-semibold text-slate-900">{result.eventTitle ?? '—'}</p>
+      </div>
+    </div>
+  )
+}
+
+const DUPLICATE_SCAN_SUMMARY =
+  'This participant has already completed race kit claim for this registration. A second kit should not be issued without authorization from race control.'
 
 export function AdminQrCheckIn() {
   const [reloadKey, setReloadKey] = useState(0)
@@ -99,7 +148,7 @@ export function AdminQrCheckIn() {
     try {
       const { data: registration, error: regError } = await supabase
         .from('registration_forms')
-        .select('id, bib_number, status, event_id')
+        .select('id, bib_number, status, event_id, entry_event_type_label')
         .eq('bib_number', lookupCode)
         .limit(1)
         .maybeSingle()
@@ -124,18 +173,6 @@ export function AdminQrCheckIn() {
         .limit(1)
         .maybeSingle()
       if (duplicateError) throw duplicateError
-      if (duplicateClaim?.id) {
-        setScanResult({
-          status: 'duplicate',
-          message: 'This rider has already claimed the race kit.',
-          code: lookupCode,
-          scannedAt: new Date().toISOString(),
-        })
-        setDuplicateDialogOpen(true)
-        setClaimDialogOpen(false)
-        return
-      }
-
       const [{ data: rider }, { data: event }] = await Promise.all([
         supabase
           .from('registration_rider_details')
@@ -147,7 +184,31 @@ export function AdminQrCheckIn() {
       ])
 
       const riderName = [rider?.first_name, rider?.last_name].filter(Boolean).join(' ').trim() || 'Registered rider'
-      const bibNumber = registration.bib_number ? String(registration.bib_number) : code
+      const bibNumber = registration.bib_number ? String(registration.bib_number) : lookupCode
+      const eventType = formatEventTypeForDisplay(
+        (registration as { entry_event_type_label?: string | null }).entry_event_type_label,
+        event?.race_type,
+      )
+
+      if (duplicateClaim?.id) {
+        setScanResult({
+          status: 'duplicate',
+          message: DUPLICATE_SCAN_SUMMARY,
+          code: lookupCode,
+          riderName,
+          category: rider?.age_category ?? 'Uncategorized',
+          discipline: rider?.discipline ?? '—',
+          eventType,
+          bibNumber,
+          eventTitle: event?.title ?? 'Current event',
+          eventId: registration.event_id ? String(registration.event_id) : undefined,
+          registrationId: registration.id,
+          scannedAt: new Date().toISOString(),
+        })
+        setDuplicateDialogOpen(true)
+        setClaimDialogOpen(false)
+        return
+      }
 
       setScanResult({
         status: 'valid',
@@ -156,7 +217,7 @@ export function AdminQrCheckIn() {
         riderName,
         category: rider?.age_category ?? 'Uncategorized',
         discipline: rider?.discipline ?? '—',
-        eventType: String(event?.race_type ?? '—'),
+        eventType,
         bibNumber,
         eventTitle: event?.title ?? 'Current event',
         eventId: registration.event_id ? String(registration.event_id) : undefined,
@@ -390,31 +451,8 @@ export function AdminQrCheckIn() {
               <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Valid rider</p>
               <p className="text-sm text-emerald-900">Ready to claim race kit.</p>
             </div>
-            <div className="space-y-2 px-5 py-4">
-              <div className="flex items-center justify-between gap-3 text-sm">
-                <p className="text-slate-500">Name</p>
-                <p className="font-semibold text-slate-900">{scanResult.riderName ?? '—'}</p>
-              </div>
-              <div className="flex items-center justify-between gap-3 text-sm">
-                <p className="text-slate-500">Category</p>
-                <p className="font-semibold text-slate-900">{scanResult.category ?? '—'}</p>
-              </div>
-              <div className="flex items-center justify-between gap-3 text-sm">
-                <p className="text-slate-500">Bib Number</p>
-                <p className="font-semibold text-slate-900">{scanResult.bibNumber ?? scanResult.code}</p>
-              </div>
-              <div className="flex items-center justify-between gap-3 text-sm">
-                <p className="text-slate-500">Discipline</p>
-                <p className="font-semibold text-slate-900">{scanResult.discipline ?? '—'}</p>
-              </div>
-              <div className="flex items-center justify-between gap-3 text-sm">
-                <p className="text-slate-500">Event Type</p>
-                <p className="font-semibold text-slate-900">{scanResult.eventType ?? '—'}</p>
-              </div>
-              <div className="flex items-center justify-between gap-3 text-sm">
-                <p className="text-slate-500">Event</p>
-                <p className="font-semibold text-slate-900">{scanResult.eventTitle ?? '—'}</p>
-              </div>
+            <div className="px-5 py-4">
+              <RiderKitDetailRows result={scanResult} />
             </div>
             <div className="flex gap-3 border-t border-slate-200 px-5 py-4">
               <button
@@ -444,12 +482,18 @@ export function AdminQrCheckIn() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">
           <div className="w-full max-w-md rounded-2xl border border-amber-200 bg-white shadow-2xl">
             <div className="rounded-t-2xl border-b border-amber-200 bg-amber-50 px-5 py-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">Duplicate scan</p>
-              <p className="text-sm text-amber-900">{scanResult.message}</p>
+              <p className="text-xs font-semibold uppercase tracking-wide text-amber-800">Kit already claimed</p>
+              <p className="mt-1 text-sm font-medium text-amber-950">Duplicate scan — do not issue another kit</p>
+              <p className="mt-2 text-sm leading-relaxed text-amber-900/95">{scanResult.message}</p>
             </div>
-            <div className="px-5 py-4 text-sm text-slate-700">
-              <p>
-                Code: <span className="font-semibold text-slate-900">{scanResult.code}</span>
+            <div className="px-5 py-4">
+              <p className="mb-3 text-xs font-medium uppercase tracking-wide text-slate-500">Registration on file</p>
+              <RiderKitDetailRows result={scanResult} />
+            </div>
+            <div className="border-t border-slate-100 bg-slate-50 px-5 py-3">
+              <p className="text-xs leading-relaxed text-slate-600">
+                If the rider insists they have not claimed a kit, confirm the bib matches their registration, then contact
+                the head of registration or race director before overriding this status.
               </p>
             </div>
             <div className="flex justify-end border-t border-slate-200 px-5 py-4">
@@ -459,9 +503,9 @@ export function AdminQrCheckIn() {
                   setDuplicateDialogOpen(false)
                   setScanResult(null)
                 }}
-                className="inline-flex items-center justify-center rounded-md border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                className="inline-flex items-center justify-center rounded-md bg-amber-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-amber-700"
               >
-                Close
+                Understood
               </button>
             </div>
           </div>

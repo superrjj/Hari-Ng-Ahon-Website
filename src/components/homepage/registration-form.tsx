@@ -364,15 +364,21 @@ export function RegistrationForm() {
 
     setSubmitting(true)
     try {
-      const raceTypeLabel = selectedEventTypeSlugs
-        .map((slug) => eventTypes.find((t) => t.slug === slug)?.name ?? formatSlug(slug))
-        .join(', ')
+      const eventEntries = selectedEventTypeSlugs.map((slug) => ({
+        slug,
+        label: eventTypes.find((t) => t.slug === slug)?.name ?? formatSlug(slug),
+      }))
+      const raceTypeLabel = eventEntries.map((e) => e.label).join(', ')
+      const checkoutBundleId = globalThis.crypto?.randomUUID?.() ?? `bundle-${Date.now()}`
 
       saveRegistrationCheckoutPayload({
         raceType: raceTypeLabel || (selectedEvent!.race_type ?? ''),
         eventId: selectedEvent!.id,
         raceCategoryId: validCategoryId,
-        registrationFee: totalFee,
+        registrationFeePerEntry: registrationFee,
+        registrationFeeTotal: totalFee,
+        checkoutBundleId,
+        eventEntries,
         registrantEmail: form.email,
         eventTitle: selectedEvent?.title ?? '',
         raceTypeLabel: selectedEvent?.race_type ?? '',

@@ -1,6 +1,7 @@
 // @ts-nocheck
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts'
 import { createClient } from 'npm:@supabase/supabase-js@2'
+import { assignBibIfMissing, finalizeBundleSiblingsPaid } from '../_shared/registration-finale.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -16,15 +17,6 @@ function jsonResponse(body: Record<string, unknown>, status: number) {
     status,
     headers: { ...corsHeaders, 'content-type': 'application/json' },
   })
-}
-
-function extractBibSequenceByPrefix(bibNumber: string, prefix: string) {
-  const value = String(bibNumber ?? '').trim()
-  const escapedPrefix = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const match = value.match(new RegExp(`^${escapedPrefix}(\\d+)$`))
-  if (!match) return 0
-  const n = Number.parseInt(match[1], 10)
-  return Number.isFinite(n) ? n : 0
 }
 
 Deno.serve(async (req) => {
@@ -113,70 +105,15 @@ Deno.serve(async (req) => {
     .eq('id', registrationId)
   if (registrationUpdateError) return jsonResponse({ error: registrationUpdateError.message }, 500)
 
-  const { data: regAfterPay, error: regAfterError } = await supabase
-    .from('registration_forms')
-    .select('bib_number, race_category_id')
-    .eq('id', registrationId)
-    .maybeSingle()
-  if (regAfterError) return jsonResponse({ error: regAfterError.message }, 500)
-
-  let bibNumber = String(regAfterPay?.bib_number ?? '').trim()
-  const raceCategoryId = regAfterPay?.race_category_id ?? registration.race_category_id
-
-  if (!bibNumber) {
-    if (!raceCategoryId) {
-      return jsonResponse({ error: 'Missing race category for this registration.' }, 400)
-    }
-
-    const { data: raceCategory, error: raceCategoryError } = await supabase
-      .from('race_categories')
-      .select('code, category_name, rider_limit')
-      .eq('id', raceCategoryId)
-      .maybeSingle()
-    if (raceCategoryError) return jsonResponse({ error: raceCategoryError.message }, 500)
-
-    const categoryCode = String(raceCategory?.code ?? '').trim()
-    if (!categoryCode) return jsonResponse({ error: 'Missing category code for this registration category.' }, 400)
-
-    const { data: existingBibs, error: existingBibsError } = await supabase
-      .from('registration_forms')
-      .select('bib_number')
-      .eq('race_category_id', raceCategoryId)
-      .eq('status', 'confirmed')
-      .not('bib_number', 'is', null)
-      .order('created_at', { ascending: true })
-      .limit(5000)
-    if (existingBibsError) return jsonResponse({ error: existingBibsError.message }, 500)
-
-    const maxSequence = (existingBibs ?? []).reduce((max, row) => {
-      const seq = extractBibSequenceByPrefix(String(row.bib_number ?? ''), categoryCode)
-      return seq > max ? seq : max
-    }, 0)
-    const nextSequence = maxSequence + 1
-    const riderLimit = Number(raceCategory?.rider_limit ?? 0)
-    if (Number.isFinite(riderLimit) && riderLimit > 0 && nextSequence > riderLimit) {
-      return jsonResponse(
-        {
-          error: `Category limit reached for ${String(raceCategory?.category_name ?? categoryCode)}. Max riders: ${riderLimit}.`,
-        },
-        400,
-      )
-    }
-    if (nextSequence > 99) {
-      return jsonResponse({ error: `Category bib sequence exceeded 2 digits for category code ${categoryCode}.` }, 400)
-    }
-
-    bibNumber = `${categoryCode}${String(nextSequence).padStart(2, '0')}`
-
-    const { error: bibUpdateError } = await supabase
-      .from('registration_forms')
-      .update({
-        bib_number: bibNumber,
-        updated_at: now,
-      })
-      .eq('id', registrationId)
-    if (bibUpdateError) return jsonResponse({ error: bibUpdateError.message }, 500)
+  try {
+    await assignBibIfMissing(supabase, registrationId)
+    await finalizeBundleSiblingsPaid(supabase, registrationId)
+  } catch (e) {
+    return jsonResponse({ error: (e as Error).message }, 500)
   }
 
+  const { data: bibRow } = await supabase.from('registration_forms').select('bib_number').eq('id', registrationId).maybeSingle()
+
+  const bibNumber = String(bibRow?.bib_number ?? '').trim()
   return jsonResponse({ ok: true, bib_number: bibNumber }, 200)
 })

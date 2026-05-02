@@ -18,6 +18,13 @@ export type CheckoutItem = {
   raceType: string
   amount: number
   currency: string
+  /** Number of registrations in the same checkout bundle (one per event type line). */
+  lineItemCount?: number
+}
+
+export type RegistrationCheckoutEntry = {
+  slug: string
+  label: string
 }
 
 /** Serialized on the payment step immediately before PayMongo (DB row created on Proceed). */
@@ -26,7 +33,14 @@ export type RegistrationCheckoutPayload = {
   eventId?: string
   raceCategoryId?: string
   registrantEmail: string
-  registrationFee: number
+  /** Per selected event-entry line item (fee x count = total payable). */
+  registrationFeePerEntry: number
+  /** Sum of registrationFeePerEntry x entries — total PayMongo charge. */
+  registrationFeeTotal: number
+  /** Stable id linking rows that share one PayMongo checkout. */
+  checkoutBundleId: string
+  /** One DB registration per selected event type. */
+  eventEntries: RegistrationCheckoutEntry[]
   /** For payment UI before a DB row exists */
   eventTitle?: string
   raceTypeLabel?: string
@@ -56,7 +70,29 @@ export function loadRegistrationCheckoutPayload(): RegistrationCheckoutPayload |
     if (!raw) return null
     const parsed = JSON.parse(raw) as RegistrationCheckoutPayload
     if (!parsed?.rider?.firstName || !parsed.registrantEmail) return null
-    return parsed as RegistrationCheckoutPayload
+    const p = parsed as RegistrationCheckoutPayload & {
+      registrationFee?: number
+      eventEntries?: RegistrationCheckoutEntry[]
+      checkoutBundleId?: string
+    }
+    if (!Array.isArray(p.eventEntries) || p.eventEntries.length === 0) {
+      const legacyFee = Number(p.registrationFee ?? p.registrationFeeTotal ?? p.registrationFeePerEntry ?? 0)
+      p.eventEntries = [{ slug: '', label: String(p.raceType ?? '') }]
+      p.registrationFeePerEntry = legacyFee || 1
+      p.registrationFeeTotal = legacyFee || 1
+      p.checkoutBundleId =
+        typeof p.checkoutBundleId === 'string' && p.checkoutBundleId.trim()
+          ? p.checkoutBundleId
+          : globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-legacy`
+    } else if (!Number.isFinite(Number(p.registrationFeePerEntry)) || !(Number(p.registrationFeeTotal) >= 0)) {
+      const n = Math.max(1, p.eventEntries.length)
+      const total = Number(p.registrationFeeTotal ?? p.registrationFee ?? p.registrationFeePerEntry ?? 0)
+      p.registrationFeeTotal = total > 0 ? total : n
+      p.registrationFeePerEntry = total > 0 ? total / n : 1
+    }
+    if (!p.checkoutBundleId?.trim())
+      p.checkoutBundleId = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-fallback`
+    return p as RegistrationCheckoutPayload
   } catch {
     return null
   }
@@ -142,6 +178,9 @@ export const registrationService = {
     raceCategoryId?: string
     registrantEmail: string
     registrationFee: number
+    checkoutBundleId?: string | null
+    entryEventTypeSlug?: string | null
+    entryEventTypeLabel?: string | null
     rider: {
       firstName: string
       lastName: string
@@ -167,6 +206,9 @@ export const registrationService = {
         raceCategoryId: args.raceCategoryId,
         registrantEmail: args.registrantEmail,
         registrationFee: args.registrationFee,
+        checkoutBundleId: args.checkoutBundleId ?? null,
+        entryEventTypeSlug: args.entryEventTypeSlug ?? null,
+        entryEventTypeLabel: args.entryEventTypeLabel ?? null,
         rider: args.rider,
       },
     })
@@ -217,6 +259,13 @@ export const registrationService = {
   },
 
   async cancelPendingPaymentDraft(registrationId: string) {
+    const { data: reg, error: regMetaError } = await supabase
+      .from('registration_forms')
+      .select('id, checkout_bundle_id, user_id')
+      .eq('id', registrationId)
+      .maybeSingle()
+    if (regMetaError) throw regMetaError
+
     const { error: orderError } = await supabase
       .from('payment_orders')
       .update({ status: 'cancelled', updated_at: new Date().toISOString() })
@@ -224,18 +273,26 @@ export const registrationService = {
       .in('status', ['created', 'pending', 'processing'])
     if (orderError) throw orderError
 
-    const { error: registrationError } = await supabase
+    const stamp = new Date().toISOString()
+    let regCancel = supabase
       .from('registration_forms')
-      .update({ status: 'cancelled', updated_at: new Date().toISOString() })
-      .eq('id', registrationId)
+      .update({ status: 'cancelled', updated_at: stamp })
       .in('status', ['payment_processing', 'pending_payment'])
+    if (reg?.checkout_bundle_id && reg?.user_id) {
+      regCancel = regCancel
+        .eq('checkout_bundle_id', reg.checkout_bundle_id as string)
+        .eq('user_id', reg.user_id as string)
+    } else {
+      regCancel = regCancel.eq('id', registrationId)
+    }
+    const { error: registrationError } = await regCancel
     if (registrationError) throw registrationError
   },
 
   async getCheckoutItem(registrationId: string): Promise<CheckoutItem | null> {
     const { data: registration, error: registrationError } = await supabase
       .from('registration_forms')
-      .select('id, event_id, registration_fee')
+      .select('id, event_id, registration_fee, checkout_bundle_id, user_id')
       .eq('id', registrationId)
       .maybeSingle()
     if (registrationError) throw registrationError
@@ -248,13 +305,67 @@ export const registrationService = {
       .maybeSingle()
     if (eventError) throw eventError
 
+    let amount = Number(registration.registration_fee ?? 0)
+    let raceTypeLine = ''
+    let lineItemCount = 1
+
+    const bundleId = registration.checkout_bundle_id ? String(registration.checkout_bundle_id) : ''
+    const userId = registration.user_id ? String(registration.user_id) : ''
+    if (bundleId && userId) {
+      const { data: rows, error: bundleErr } = await supabase
+        .from('registration_forms')
+        .select('registration_fee, entry_event_type_label')
+        .eq('checkout_bundle_id', bundleId)
+        .eq('user_id', userId)
+        .order('created_at', { ascending: true })
+
+      if (!bundleErr && rows?.length) {
+        lineItemCount = rows.length
+        amount = rows.reduce((sum, row) => sum + Number(row.registration_fee ?? 0), 0) || amount
+        raceTypeLine = rows
+          .map((row) => String(row.entry_event_type_label ?? '').trim())
+          .filter(Boolean)
+          .join(', ')
+      }
+    }
+
+    if (!raceTypeLine) raceTypeLine = normalizeEventType(event?.race_type)
+
     return {
       registrationId: registration.id,
       eventTitle: String(event?.title ?? 'Event Registration'),
-      raceType: String(event?.race_type ?? '-'),
-      amount: Number(registration.registration_fee ?? 0),
+      raceType: raceTypeLine || String(event?.race_type ?? '-'),
+      amount: amount > 0 ? amount : Number(registration.registration_fee ?? 0),
       currency: 'PHP',
+      lineItemCount,
     }
+  },
+
+  /** Other registrations purchased in the same PayMongo checkout (for certificate links). */
+  async listCheckoutBundleCertificates(registrationId: string): Promise<
+    Array<{ id: string; entry_event_type_label: string | null }>
+  > {
+    const { data: reg, error: e1 } = await supabase
+      .from('registration_forms')
+      .select('checkout_bundle_id, user_id')
+      .eq('id', registrationId)
+      .maybeSingle()
+    if (e1) throw e1
+    const bundleId = reg?.checkout_bundle_id ? String(reg.checkout_bundle_id) : ''
+    const userId = reg?.user_id ? String(reg.user_id) : ''
+    if (!bundleId || !userId) return []
+
+    const { data: rows, error: e2 } = await supabase
+      .from('registration_forms')
+      .select('id, entry_event_type_label')
+      .eq('checkout_bundle_id', bundleId)
+      .eq('user_id', userId)
+      .order('created_at', { ascending: true })
+    if (e2) throw e2
+    return (rows ?? []).map((r) => ({
+      id: String(r.id),
+      entry_event_type_label: r.entry_event_type_label ?? null,
+    }))
   },
 
   async markRegistrationAsPaidAfterPaymongoRedirect(registrationId: string) {
@@ -285,13 +396,23 @@ export const registrationService = {
   async getRegistrationCertificateData(registrationId: string): Promise<RegistrationCertificateData | null> {
     const { data: registration, error: registrationError } = await supabase
       .from('registration_forms')
-      .select('id, event_id, race_category_id, bib_number, registrant_email, status')
+      .select(
+        'id, event_id, race_category_id, bib_number, registrant_email, status, entry_event_type_label, checkout_bundle_id',
+      )
       .eq('id', registrationId)
       .maybeSingle()
     if (registrationError) throw registrationError
     if (!registration) return null
 
-    const [{ data: rider, error: riderError }, { data: event, error: eventError }, { data: order, error: orderError }, { data: raceCategory, error: raceCategoryError }] =
+    let orderQuery = supabase
+      .from('payment_orders')
+      .select('id, status, paid_at, created_at, provider_reference')
+      .eq('registration_id', registrationId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    const [{ data: rider, error: riderError }, { data: event, error: eventError }, { data: raceCategory, error: raceCategoryError }, orderResult] =
       await Promise.all([
         supabase
           .from('registration_rider_details')
@@ -299,17 +420,25 @@ export const registrationService = {
           .eq('registration_id', registrationId)
           .maybeSingle(),
         supabase.from('events').select('id, title, race_type').eq('id', registration.event_id).maybeSingle(),
-        supabase
-          .from('payment_orders')
-          .select('id, status, paid_at, created_at, provider_reference')
-          .eq('registration_id', registrationId)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle(),
         registration.race_category_id
           ? supabase.from('race_categories').select('category_name, code').eq('id', registration.race_category_id).maybeSingle()
           : Promise.resolve({ data: null, error: null }),
+        orderQuery,
       ])
+
+    let { data: order, error: orderError } = orderResult
+    const bundleRef = registration.checkout_bundle_id ? String(registration.checkout_bundle_id) : ''
+    if (!order?.id && bundleRef) {
+      const r2 = await supabase
+        .from('payment_orders')
+        .select('id, status, paid_at, created_at, provider_reference')
+        .eq('checkout_bundle_id', bundleRef)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      order = r2.data
+      orderError = r2.error
+    }
 
     if (riderError) throw riderError
     if (eventError) throw eventError
@@ -336,7 +465,8 @@ export const registrationService = {
     const riderName = [rider?.first_name, rider?.last_name].filter(Boolean).join(' ').trim() || 'Registered Rider'
     const category = String(rider?.age_category ?? raceCategory?.category_name ?? 'Open Category')
     const discipline = String(rider?.discipline ?? event?.race_type ?? 'Cycling')
-    const eventType = normalizeEventType(event?.race_type)
+    const entryLabel = String(registration.entry_event_type_label ?? '').trim()
+    const eventType = entryLabel || normalizeEventType(event?.race_type)
     const categoryCode = String(raceCategory?.code ?? '').trim() || '00'
     const rawBib = String(registration.bib_number ?? '').trim()
     const paymentStatus = String(txStatus ?? order?.status ?? registration.status ?? 'pending')
