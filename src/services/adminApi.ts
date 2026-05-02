@@ -71,6 +71,7 @@ export const adminApi = {
       registrant_email?: string | null
       user_id?: string | null
       event_id?: string | null
+      race_category_id?: string | null
     }>
 
     const registrationIds = base.map((f) => f.id)

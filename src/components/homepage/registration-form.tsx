@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { api } from '../../services/api'
 import { supabase } from '../../lib/supabase'
-import { registrationService, saveRegistrationCheckoutPayload } from '../../services/registrationService'
+import { saveRegistrationCheckoutPayload } from '../../services/registrationService'
 import type { Event } from '../../types'
 
 // ─── Types ───────────────────────────────────────────────────────────────────

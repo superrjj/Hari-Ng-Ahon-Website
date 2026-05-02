@@ -268,11 +268,6 @@ export function RegistrationInfo() {
         <div className="pt-2">
           {loading ? <p className="text-sm text-slate-500">Loading available events...</p> : null}
           {error ? <p className="text-sm text-rose-600">{error}</p> : null}
-          {pendingRegistrationId ? (
-            <p className="mb-2 text-sm text-amber-700">
-              You have a pending checkout. Clicking Next will resume your payment.
-            </p>
-          ) : null}
           <Link
             to={session ? nextPath : `/auth?redirect=${encodeURIComponent(nextPath)}`}
             className="inline-flex w-full items-center justify-center rounded-md bg-[#cfae3f] px-5 py-2.5 text-sm font-semibold text-black transition hover:bg-[#dab852] sm:w-auto"
