@@ -1,4 +1,3 @@
-// @ts-nocheck
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts'
 import { createClient } from 'npm:@supabase/supabase-js@2'
 
@@ -114,40 +113,6 @@ Deno.serve(async (req) => {
   const slugTrim =
     typeof body.entryEventTypeSlug === 'string' ? String(body.entryEventTypeSlug).trim() || null : body.entryEventTypeSlug ?? null
   const bundleStr = typeof body.checkoutBundleId === 'string' ? String(body.checkoutBundleId).trim() || null : null
-
-  if (resolvedRaceCategoryId) {
-    let dupQuery = supabase
-      .from('registration_forms')
-      .select('id')
-      .eq('user_id', userId)
-      .eq('event_id', event.id)
-      .eq('race_category_id', resolvedRaceCategoryId)
-    if (slugTrim) dupQuery = dupQuery.eq('entry_event_type_slug', slugTrim)
-    else dupQuery = dupQuery.is('entry_event_type_slug', null)
-
-    const { data: sameCombo, error: dupLookupError } = await dupQuery
-    if (dupLookupError) return textResponse(dupLookupError.message, 500)
-    const siblingIds = (sameCombo ?? []).map((r) => r.id).filter(Boolean)
-    if (siblingIds.length > 0) {
-      const { data: paidOrder, error: paidLookupError } = await supabase
-        .from('payment_orders')
-        .select('id')
-        .in('registration_id', siblingIds)
-        .eq('status', 'paid')
-        .limit(1)
-        .maybeSingle()
-      if (paidLookupError) return textResponse(paidLookupError.message, 500)
-      if (paidOrder?.id) {
-        return textResponse(
-          JSON.stringify({
-            code: 'ALREADY_REGISTERED_PAID',
-            message: 'You are already registered and confirmed for this category.',
-          }),
-          409,
-        )
-      }
-    }
-  }
 
   const registrationAttemptId = createAttemptId()
   const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString()
