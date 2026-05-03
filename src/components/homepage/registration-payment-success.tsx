@@ -2,6 +2,7 @@ import QRCode from 'qrcode'
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
+import { supabase } from '../../lib/supabase'
 import { registrationService, type RegistrationCertificateData } from '../../services/registrationService'
 
 async function loadImage(src: string): Promise<HTMLImageElement> {
@@ -380,29 +381,62 @@ export function RegistrationPaymentSuccess() {
 
   useEffect(() => {
     let active = true
-    async function queueAutoEmail() {
-      if (!certificateData?.isPaid || !certificateData.registrantEmail) return
-      const dedupeKey = `cert-email-queued:${certificateData.registrationId}`
+    async function sendRaceClaimCertificateEmail() {
+      if (!certificateData?.isPaid || !certificateData.registrantEmail?.trim()) return
+      if (!certificateData.bibNumber?.trim()) return
+      const dedupeKey = `cert-email-sent:${certificateData.registrationId}`
       if (window.localStorage.getItem(dedupeKey) === '1') return
+
+      const { data: sess } = await supabase.auth.getSession()
+      const token = sess.session?.access_token
+      if (!token) return
+
       try {
-        const result = await registrationService.queueCertificateEmail({
-          registrationId: certificateData.registrationId,
-          recipient: certificateData.registrantEmail,
-          subject: `Your Hari ng Ahon QR Certificate (${certificateData.bibNumber})`,
+        const { data, error } = await supabase.functions.invoke('send-race-claim-certificate-email', {
+          headers: { Authorization: `Bearer ${token}` },
+          body: { registrationId: certificateData.registrationId },
         })
         if (!active) return
-        window.localStorage.setItem(dedupeKey, '1')
-        setAutoEmailMessage(result.queued ? 'A copy was automatically queued to your email.' : 'Certificate email is already queued.')
+        if (error) {
+          const raw = (error as { message?: string }).message ?? ''
+          if (raw.toLowerCase().includes('resend') || raw.includes('503')) {
+            setAutoEmailMessage('Certificate email is not available yet (mail not configured). You can download your certificate below.')
+            return
+          }
+          setAutoEmailMessage('Could not send your certificate email. You can still download it below, or contact support.')
+          return
+        }
+        const payload = data as { ok?: boolean; skipped?: boolean; reason?: string; error?: string; detail?: string } | null
+        if (payload?.error) {
+          const detail = typeof payload.detail === 'string' ? payload.detail : ''
+          if (String(payload.error).includes('RESEND_API_KEY') || detail.includes('resend')) {
+            setAutoEmailMessage('Certificate email is not available yet (mail not configured). You can download your certificate below.')
+            return
+          }
+          setAutoEmailMessage(String(payload.error))
+          return
+        }
+        if (payload?.skipped && payload?.reason === 'already_sent') {
+          window.localStorage.setItem(dedupeKey, '1')
+          setAutoEmailMessage('Your QR Code Race Claim Kit was already sent to your email.')
+          return
+        }
+        if (payload?.ok) {
+          window.localStorage.setItem(dedupeKey, '1')
+          setAutoEmailMessage('Your QR Code Race Claim Kit certificate was sent to your email.')
+          return
+        }
+        setAutoEmailMessage('Certificate email could not be confirmed. You can download your certificate below.')
       } catch {
         if (!active) return
-        setAutoEmailMessage('Auto email queue failed. Please contact support if email is not received.')
+        setAutoEmailMessage('Certificate email failed to send. Please download your certificate below or contact support.')
       }
     }
-    void queueAutoEmail()
+    void sendRaceClaimCertificateEmail()
     return () => {
       active = false
     }
-  }, [certificateData])
+  }, [certificateData, session?.access_token])
 
   return (
     <section className="bg-white px-4 py-10 text-slate-900">
