@@ -58,7 +58,7 @@ export const adminApi = {
     // which can break when events is split into step tables.
     const { data: forms, error: formsError } = await supabase
       .from('registration_forms')
-      .select('id, created_at, status, registrant_email, user_id, event_id, bib_number, race_category_id')
+      .select('id, created_at, status, registrant_email, user_id, event_id, bib_number, race_category_id, checkout_bundle_id')
       .order('created_at', { ascending: false })
       .limit(200)
 
@@ -72,6 +72,7 @@ export const adminApi = {
       user_id?: string | null
       event_id?: string | null
       race_category_id?: string | null
+      checkout_bundle_id?: string | null
     }>
 
     const registrationIds = base.map((f) => f.id)
@@ -122,6 +123,33 @@ export const adminApi = {
     const latestOrderByReg = new Map<string, (typeof orders)[number]>()
     for (const o of orders ?? []) {
       if (!latestOrderByReg.has(o.registration_id)) latestOrderByReg.set(o.registration_id, o)
+    }
+
+    const bundleIdsForFallback = Array.from(
+      new Set(
+        base
+          .filter((f) => !latestOrderByReg.has(f.id) && f.checkout_bundle_id)
+          .map((f) => String(f.checkout_bundle_id)),
+      ),
+    )
+    if (bundleIdsForFallback.length > 0) {
+      const { data: bundleOrders, error: bundleOrdersError } = await supabase
+        .from('payment_orders')
+        .select('id, registration_id, status, merchant_reference, provider_reference, updated_at, created_at, checkout_bundle_id')
+        .in('checkout_bundle_id', bundleIdsForFallback)
+        .order('created_at', { ascending: false })
+      if (bundleOrdersError) throw bundleOrdersError
+      const latestOrderByBundle = new Map<string, (typeof bundleOrders)[number]>()
+      for (const o of bundleOrders ?? []) {
+        const bid = String(o.checkout_bundle_id ?? '')
+        if (bid && !latestOrderByBundle.has(bid)) latestOrderByBundle.set(bid, o)
+      }
+      for (const f of base) {
+        if (!latestOrderByReg.has(f.id) && f.checkout_bundle_id) {
+          const bo = latestOrderByBundle.get(String(f.checkout_bundle_id))
+          if (bo) latestOrderByReg.set(f.id, bo)
+        }
+      }
     }
 
     // 3) Latest transaction per latest payment order
@@ -176,7 +204,7 @@ export const adminApi = {
   async registrationDetails(registrationId: string) {
     const { data: reg, error: regError } = await supabase
       .from('registration_forms')
-      .select('id, created_at, status, registrant_email, user_id, event_id')
+      .select('id, created_at, status, registrant_email, user_id, event_id, checkout_bundle_id')
       .eq('id', registrationId)
       .maybeSingle()
 
@@ -192,7 +220,7 @@ export const adminApi = {
 
     if (riderError) throw riderError
 
-    const { data: order, error: orderError } = await supabase
+    let { data: order, error: orderError } = await supabase
       .from('payment_orders')
       .select('id, status, merchant_reference, provider_reference, amount, currency, created_at, updated_at')
       .eq('registration_id', registrationId)
@@ -201,6 +229,19 @@ export const adminApi = {
       .maybeSingle()
 
     if (orderError) throw orderError
+
+    const bundleRef = reg?.checkout_bundle_id ? String(reg.checkout_bundle_id) : ''
+    if (!order?.id && bundleRef) {
+      const r2 = await supabase
+        .from('payment_orders')
+        .select('id, status, merchant_reference, provider_reference, amount, currency, created_at, updated_at')
+        .eq('checkout_bundle_id', bundleRef)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (r2.error) throw r2.error
+      order = r2.data
+    }
 
     const { data: tx, error: txError } = order
       ? await supabase

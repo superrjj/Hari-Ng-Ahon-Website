@@ -152,10 +152,14 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
   if (req.method !== 'POST') return jsonResponse({ error: 'Method not allowed' }, 405)
 
+  console.log('[send-race-claim-certificate-email] POST received')
+
   if (!RESEND_API_KEY.trim()) {
+    console.warn('[send-race-claim-certificate-email] missing RESEND_API_KEY')
     return jsonResponse({ error: 'RESEND_API_KEY is not configured for this project.' }, 503)
   }
   if (!RESEND_FROM.trim()) {
+    console.warn('[send-race-claim-certificate-email] missing RESEND_FROM')
     return jsonResponse({ error: 'RESEND_FROM is not configured. Set it in .env / Supabase Edge secrets.' }, 503)
   }
 
@@ -178,6 +182,8 @@ Deno.serve(async (req) => {
 
   const registrationId = String(body.registrationId ?? '').trim()
   if (!registrationId) return jsonResponse({ error: 'Missing registrationId' }, 400)
+
+  console.log('[send-race-claim-certificate-email] processing registration', registrationId)
 
   const { data: registration, error: regLookupError } = await supabaseAdmin
     .from('registration_forms')
@@ -322,9 +328,11 @@ Deno.serve(async (req) => {
 
   if (!resendRes.ok) {
     const errText = await resendRes.text()
-    console.error('Resend error', resendRes.status, errText)
+    console.error('[send-race-claim-certificate-email] Resend error', resendRes.status, errText)
     return jsonResponse({ error: 'Failed to send email.', detail: errText.slice(0, 500) }, 502)
   }
+
+  console.log('[send-race-claim-certificate-email] Resend accepted for', registrationId, recipient)
 
   const now = new Date().toISOString()
   const { error: insertErr } = await supabaseAdmin.from('notification_deliveries').insert({
