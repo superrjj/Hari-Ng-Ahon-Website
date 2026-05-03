@@ -116,6 +116,50 @@ export function AdminQrCheckIn() {
   const [reloadKey, setReloadKey] = useState(0)
   const { data, loading, error } = useModuleLoader(() => adminModulesApi.qrDashboard(), [reloadKey])
 
+  const [entryLabelByRegistrationId, setEntryLabelByRegistrationId] = useState<Record<string, string>>({})
+
+  useEffect(() => {
+    const scans = data?.scans ?? []
+    const ids = Array.from(
+      new Set(scans.map((s) => String((s as { registration_id?: string }).registration_id ?? '')).filter(Boolean)),
+    )
+    if (ids.length === 0) {
+      setEntryLabelByRegistrationId({})
+      return
+    }
+    let cancelled = false
+    void supabase
+      .from('registration_forms')
+      .select('id, entry_event_type_label')
+      .in('id', ids)
+      .then(({ data: rows }) => {
+        if (cancelled || !rows) return
+        const next: Record<string, string> = {}
+        for (const row of rows as Array<{ id: string; entry_event_type_label?: string | null }>) {
+          const lab = String(row.entry_event_type_label ?? '').trim()
+          if (lab) next[String(row.id)] = lab
+        }
+        setEntryLabelByRegistrationId(next)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [data?.scans])
+
+  useEffect(() => {
+    const channel = supabase
+      .channel('admin-qr-checkins')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'qr_checkins' },
+        () => setReloadKey((k) => k + 1),
+      )
+      .subscribe()
+    return () => {
+      void supabase.removeChannel(channel)
+    }
+  }, [])
+
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const readerRef = useRef<BrowserMultiFormatReader | null>(null)
   const controlsRef = useRef<ScannerControls | null>(null)
@@ -363,23 +407,35 @@ export function AdminQrCheckIn() {
   }, [startCamera])
 
   const historyRows = useMemo(() => data?.scans ?? [], [data?.scans])
+
+  const tableEventTypeDisplay = useCallback(
+    (row: Record<string, unknown>) => {
+      const rid = String(row.registration_id ?? '')
+      const rawEventType = String(row.event_type ?? '')
+      return formatEventTypeForDisplay(entryLabelByRegistrationId[rid] ?? null, rawEventType || null)
+    },
+    [entryLabelByRegistrationId],
+  )
+
   const filteredHistoryRows = useMemo(() => {
     const query = historySearch.trim().toLowerCase()
     if (!query) return historyRows
     return historyRows.filter((row) => {
+      const r = row as Record<string, unknown>
       const haystack = [
-        String(row.scanned_code ?? ''),
-        String(row.rider_name ?? ''),
-        String(row.discipline ?? ''),
-        String(row.category ?? ''),
-        String(row.event_type ?? ''),
-        String(row.scan_status ?? ''),
+        String(r.scanned_code ?? ''),
+        String(r.rider_name ?? ''),
+        String(r.discipline ?? ''),
+        String(r.category ?? ''),
+        String(r.event_type ?? ''),
+        tableEventTypeDisplay(r),
+        String(r.scan_status ?? ''),
       ]
         .join(' ')
         .toLowerCase()
       return haystack.includes(query)
     })
-  }, [historyRows, historySearch])
+  }, [historyRows, historySearch, tableEventTypeDisplay])
 
   const handleClaimKit = useCallback(async () => {
     if (!scanResult || scanResult.status !== 'valid' || !scanResult.registrationId || !scanResult.eventId) return
@@ -600,7 +656,9 @@ export function AdminQrCheckIn() {
                     <td className="px-2 py-2 text-slate-700 sm:px-3">{String(row.rider_name ?? 'Registered rider')}</td>
                     <td className="px-2 py-2 text-slate-700 sm:px-3">{String(row.discipline ?? '—')}</td>
                     <td className="px-2 py-2 text-slate-700 sm:px-3">{String(row.category ?? '—')}</td>
-                    <td className="px-2 py-2 text-slate-700 sm:px-3">{String(row.event_type ?? '—')}</td>
+                    <td className="px-2 py-2 text-slate-700 sm:px-3">
+                      {tableEventTypeDisplay(row as Record<string, unknown>)}
+                    </td>
                     <td className="px-2 py-2 sm:px-3">
                       <span className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusBadgeClass(row.scan_status)}`}>
                         {formatScanStatusLabel(row.scan_status)}

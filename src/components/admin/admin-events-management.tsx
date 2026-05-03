@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import type { Dispatch, SetStateAction } from 'react'
 import {
   CalendarDays, CheckCircle2, Clock3, Filter, MapPinned,
   Pencil, Plus, Search, Trash2, UploadCloud, Users, X, ChevronLeft,
@@ -11,6 +12,34 @@ import { ModuleShell, formatDate, formatMoney, useModuleLoader } from './admin-m
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 type Step = 1 | 2 | 3 | 4
+
+interface EventFormState {
+  title: string
+  description: string
+  race_type: string
+  race_types: string[]
+  venue: string
+  city: string
+  event_date: string
+  start_time: string
+  end_time: string
+  google_maps_link: string
+  registration_deadline: string
+  registration_fee: string
+}
+
+interface ExtraFormState {
+  prizePool: string
+  totalPrize: string
+  prizeDesc: string
+  orgName: string
+  orgEmail: string
+  orgPhone: string
+  orgWebsite: string
+  bibInstructions: string
+}
+
+type AdminEventRow = Record<string, unknown>
 
 interface DisciplineCategory {
   id: string
@@ -158,19 +187,31 @@ function UploadField({
   const inputRef = useRef<HTMLInputElement | null>(null)
   const [dragging, setDragging] = useState(false)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [remoteUrlBust, setRemoteUrlBust] = useState(0)
 
   useEffect(() => {
     if (!value) {
-      setPreviewUrl(null)
+      setTimeout(() => setPreviewUrl(null), 0)
       return
     }
     const url = URL.createObjectURL(value)
-    setPreviewUrl(url)
-    return () => URL.revokeObjectURL(url)
+    const t = setTimeout(() => setPreviewUrl(url), 0)
+    return () => {
+      clearTimeout(t)
+      URL.revokeObjectURL(url)
+    }
   }, [value])
 
+  useEffect(() => {
+    if (!currentUrl) {
+      setTimeout(() => setRemoteUrlBust(0), 0)
+      return
+    }
+    setTimeout(() => setRemoteUrlBust(Date.now()), 0)
+  }, [currentUrl])
+
   // New file preview takes priority; existing remote URL gets a cache-busting param
-  const displayUrl = previewUrl ?? (currentUrl ? `${currentUrl}?t=${Date.now()}` : null)
+  const displayUrl = previewUrl ?? (currentUrl ? `${currentUrl}?t=${remoteUrlBust}` : null)
 
   const handleFiles = (files: FileList | null) => {
     if (!files || files.length === 0) return
@@ -286,8 +327,8 @@ function Step1({
   eventTypesLoading,
   onAddEventType,
 }: {
-  form: any
-  setForm: any
+  form: EventFormState
+  setForm: Dispatch<SetStateAction<EventFormState>>
   posterFile: File | null
   setPosterFile: (file: File | null) => void
   routeMapFile: File | null
@@ -306,7 +347,7 @@ function Step1({
           <div className="space-y-3">
             <label className="block">
               <p className="mb-1 text-xs font-medium text-slate-600">Event Title <span className="text-red-500">*</span></p>
-              <input className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="Enter event title" value={form.title} onChange={(e) => setForm((v: any) => ({ ...v, title: e.target.value }))} />
+              <input className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="Enter event title" value={form.title} onChange={(e) => setForm((v) => ({ ...v, title: e.target.value }))} />
             </label>
             <label className="block">
               <p className="mb-1 text-xs font-medium text-slate-600">Event Description <span className="text-red-500">*</span></p>
@@ -314,7 +355,7 @@ function Step1({
                 className="min-h-[7rem] w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 resize-none"
                 placeholder="Tell us about your event..."
                 value={form.description}
-                onChange={(e) => setForm((v: any) => ({ ...v, description: e.target.value }))}
+                onChange={(e) => setForm((v) => ({ ...v, description: e.target.value }))}
               />
               <p className="mt-0.5 text-right text-[10px] text-slate-400">{form.description.length} / 1000</p>
             </label>
@@ -340,7 +381,7 @@ function Step1({
                           name="event_type"
                           checked={checked}
                           onChange={(e) => {
-                            setForm((v: any) => {
+                            setForm((v) => {
                               const prev: string[] = Array.isArray(v.race_types) ? v.race_types : []
                               const set = new Set(prev)
                               if (e.target.checked) set.add(t.slug)
@@ -389,7 +430,7 @@ function Step1({
                 type="number"
                 min="0"
                 value={form.registration_fee}
-                onChange={(e) => setForm((v: any) => ({ ...v, registration_fee: e.target.value }))}
+                onChange={(e) => setForm((v) => ({ ...v, registration_fee: e.target.value }))}
               />
             </label>
           </div>
@@ -411,23 +452,23 @@ function Step1({
         <div className="grid gap-3 md:grid-cols-3">
           <label>
             <p className="mb-1 text-xs font-medium text-slate-600">Event Date <span className="text-red-500">*</span></p>
-            <input className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" type="date" value={form.event_date} onChange={(e) => setForm((v: any) => ({ ...v, event_date: e.target.value }))} />
+            <input className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" type="date" value={form.event_date} onChange={(e) => setForm((v) => ({ ...v, event_date: e.target.value }))} />
           </label>
           <label>
             <p className="mb-1 text-xs font-medium text-slate-600">Start Time <span className="text-red-500">*</span></p>
-            <input className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" type="time" value={form.start_time} onChange={(e) => setForm((v: any) => ({ ...v, start_time: e.target.value }))} />
+            <input className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" type="time" value={form.start_time} onChange={(e) => setForm((v) => ({ ...v, start_time: e.target.value }))} />
           </label>
           <label>
             <p className="mb-1 text-xs font-medium text-slate-600">End Time <span className="text-red-500">*</span></p>
-            <input className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" type="time" value={form.end_time} onChange={(e) => setForm((v: any) => ({ ...v, end_time: e.target.value }))} />
+            <input className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" type="time" value={form.end_time} onChange={(e) => setForm((v) => ({ ...v, end_time: e.target.value }))} />
           </label>
           <label className="md:col-span-2">
             <p className="mb-1 text-xs font-medium text-slate-600">Venue / Location <span className="text-red-500">*</span></p>
-            <input className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="Enter venue or location" value={form.venue} onChange={(e) => setForm((v: any) => ({ ...v, venue: e.target.value }))} />
+            <input className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="Enter venue or location" value={form.venue} onChange={(e) => setForm((v) => ({ ...v, venue: e.target.value }))} />
           </label>
           <label>
             <p className="mb-1 text-xs font-medium text-slate-600">City / Province <span className="text-red-500">*</span></p>
-            <input className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="Enter city or province" value={form.city} onChange={(e) => setForm((v: any) => ({ ...v, city: e.target.value }))} />
+            <input className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="Enter city or province" value={form.city} onChange={(e) => setForm((v) => ({ ...v, city: e.target.value }))} />
           </label>
           <label>
             <p className="mb-1 text-xs font-medium text-slate-600">Route Map (Optional)</p>
@@ -442,7 +483,7 @@ function Step1({
           </label>
           <label className="md:col-span-2">
             <p className="mb-1 text-xs font-medium text-slate-600">Google Maps Link (Optional)</p>
-            <input className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="https://maps.google.com/..." value={form.google_maps_link} onChange={(e) => setForm((v: any) => ({ ...v, google_maps_link: e.target.value }))} />
+            <input className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="https://maps.google.com/..." value={form.google_maps_link} onChange={(e) => setForm((v) => ({ ...v, google_maps_link: e.target.value }))} />
             <p className="mt-0.5 text-[10px] text-slate-400">Paste a Google Maps link for your event venue or route.</p>
           </label>
           <label className="md:col-span-2">
@@ -451,7 +492,7 @@ function Step1({
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
               type="datetime-local"
               value={form.registration_deadline}
-              onChange={(e) => setForm((v: any) => ({ ...v, registration_deadline: e.target.value }))}
+              onChange={(e) => setForm((v) => ({ ...v, registration_deadline: e.target.value }))}
             />
           </label>
         </div>
@@ -722,8 +763,8 @@ function Step3({
   setOrganizerLogoFile,
   currentOrgLogoUrl,
 }: {
-  extra: any
-  setExtra: any
+  extra: ExtraFormState
+  setExtra: Dispatch<SetStateAction<ExtraFormState>>
   organizerLogoFile: File | null
   setOrganizerLogoFile: (file: File | null) => void
   currentOrgLogoUrl?: string | null
@@ -736,7 +777,7 @@ function Step3({
         <div className="space-y-2 mb-3">
           {['none', 'has'].map((opt) => (
             <label key={opt} className="flex items-center gap-2 cursor-pointer">
-              <input type="radio" name="prizePool" value={opt} checked={extra.prizePool === opt} onChange={() => setExtra((v: any) => ({ ...v, prizePool: opt }))} className="accent-blue-600" />
+              <input type="radio" name="prizePool" value={opt} checked={extra.prizePool === opt} onChange={() => setExtra((v) => ({ ...v, prizePool: opt }))} className="accent-blue-600" />
               <span className="text-sm text-slate-700">{opt === 'none' ? 'No prize pool' : 'Has prize pool'}</span>
             </label>
           ))}
@@ -745,11 +786,11 @@ function Step3({
           <div className="space-y-3">
             <label>
               <p className="mb-1 text-xs font-medium text-slate-600">Total Prize Pool (PHP)</p>
-              <input className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="50,000" value={extra.totalPrize} onChange={(e) => setExtra((v: any) => ({ ...v, totalPrize: e.target.value }))} />
+              <input className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="50,000" value={extra.totalPrize} onChange={(e) => setExtra((v) => ({ ...v, totalPrize: e.target.value }))} />
             </label>
             <label>
               <p className="mb-1 text-xs font-medium text-slate-600">Prize Pool Description (Optional)</p>
-              <textarea className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 resize-none min-h-16" placeholder="e.g., Cash prizes for top 3 finishers per category." value={extra.prizeDesc} onChange={(e) => setExtra((v: any) => ({ ...v, prizeDesc: e.target.value }))} />
+              <textarea className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 resize-none min-h-16" placeholder="e.g., Cash prizes for top 3 finishers per category." value={extra.prizeDesc} onChange={(e) => setExtra((v) => ({ ...v, prizeDesc: e.target.value }))} />
             </label>
           </div>
         )}
@@ -760,21 +801,21 @@ function Step3({
         <div className="space-y-3">
           <label>
             <p className="mb-1 text-xs font-medium text-slate-600">Organizer Name <span className="text-red-500">*</span></p>
-            <input className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="All Out Multisports" value={extra.orgName} onChange={(e) => setExtra((v: any) => ({ ...v, orgName: e.target.value }))} />
+            <input className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="All Out Multisports" value={extra.orgName} onChange={(e) => setExtra((v) => ({ ...v, orgName: e.target.value }))} />
           </label>
           <div className="grid gap-3 md:grid-cols-2">
             <label>
               <p className="mb-1 text-xs font-medium text-slate-600">Contact Email <span className="text-red-500">*</span></p>
-              <input className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="email@example.com" value={extra.orgEmail} onChange={(e) => setExtra((v: any) => ({ ...v, orgEmail: e.target.value }))} />
+              <input className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="email@example.com" value={extra.orgEmail} onChange={(e) => setExtra((v) => ({ ...v, orgEmail: e.target.value }))} />
             </label>
             <label>
               <p className="mb-1 text-xs font-medium text-slate-600">Contact Number <span className="text-red-500">*</span></p>
-              <input className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="0917 123 4567" value={extra.orgPhone} onChange={(e) => setExtra((v: any) => ({ ...v, orgPhone: e.target.value }))} />
+              <input className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="0917 123 4567" value={extra.orgPhone} onChange={(e) => setExtra((v) => ({ ...v, orgPhone: e.target.value }))} />
             </label>
           </div>
           <label>
             <p className="mb-1 text-xs font-medium text-slate-600">Website / Social Media (Optional)</p>
-            <input className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="https://www.example.com" value={extra.orgWebsite} onChange={(e) => setExtra((v: any) => ({ ...v, orgWebsite: e.target.value }))} />
+            <input className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="https://www.example.com" value={extra.orgWebsite} onChange={(e) => setExtra((v) => ({ ...v, orgWebsite: e.target.value }))} />
           </label>
           <label>
             <p className="mb-1 text-xs font-medium text-slate-600">Organizer Logo (Optional)</p>
@@ -794,7 +835,7 @@ function Step3({
         <p className="mb-3 text-sm font-semibold text-slate-800">Jersey / Bib Claiming Instructions</p>
         <label>
           <p className="mb-1 text-xs font-medium text-slate-600">Instructions <span className="text-red-500">*</span></p>
-          <textarea className="min-h-28 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 resize-none" placeholder="Riders may claim their jerseys and bib numbers on:&#10;&#10;June 14, 2025 (Saturday) | 9:00 AM - 5:00 PM&#10;Burham Park Pavilion, Baguio City&#10;&#10;Please bring a valid ID or confirmation email." value={extra.bibInstructions} onChange={(e) => setExtra((v: any) => ({ ...v, bibInstructions: e.target.value }))} />
+          <textarea className="min-h-28 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 resize-none" placeholder="Riders may claim their jerseys and bib numbers on:&#10;&#10;June 14, 2025 (Saturday) | 9:00 AM - 5:00 PM&#10;Burham Park Pavilion, Baguio City&#10;&#10;Please bring a valid ID or confirmation email." value={extra.bibInstructions} onChange={(e) => setExtra((v) => ({ ...v, bibInstructions: e.target.value }))} />
           <p className="mt-0.5 text-right text-[10px] text-slate-400">{extra.bibInstructions.length} / 1000</p>
         </label>
       </div>
@@ -815,9 +856,9 @@ function Step4({
   currentOrgLogoUrl,
   eventTypes,
 }: {
-  form: any
+  form: EventFormState
   disciplines: Discipline[]
-  extra: any
+  extra: ExtraFormState
   posterFile?: File | null
   currentPosterUrl?: string | null
   routeMapFile?: File | null
@@ -835,12 +876,15 @@ function Step4({
 
   useEffect(() => {
     if (!posterFile) {
-      setPosterPreviewUrl(null)
+      setTimeout(() => setPosterPreviewUrl(null), 0)
       return
     }
     const url = URL.createObjectURL(posterFile)
-    setPosterPreviewUrl(url)
-    return () => URL.revokeObjectURL(url)
+    const t = setTimeout(() => setPosterPreviewUrl(url), 0)
+    return () => {
+      clearTimeout(t)
+      URL.revokeObjectURL(url)
+    }
   }, [posterFile])
 
   const displayPosterUrl = posterPreviewUrl ?? currentPosterUrl ?? null
@@ -848,23 +892,29 @@ function Step4({
   const [routePreviewUrl, setRoutePreviewUrl] = useState<string | null>(null)
   useEffect(() => {
     if (!routeMapFile) {
-      setRoutePreviewUrl(null)
+      setTimeout(() => setRoutePreviewUrl(null), 0)
       return
     }
     const url = URL.createObjectURL(routeMapFile)
-    setRoutePreviewUrl(url)
-    return () => URL.revokeObjectURL(url)
+    const t = setTimeout(() => setRoutePreviewUrl(url), 0)
+    return () => {
+      clearTimeout(t)
+      URL.revokeObjectURL(url)
+    }
   }, [routeMapFile])
 
   const [orgLogoPreviewUrl, setOrgLogoPreviewUrl] = useState<string | null>(null)
   useEffect(() => {
     if (!organizerLogoFile) {
-      setOrgLogoPreviewUrl(null)
+      setTimeout(() => setOrgLogoPreviewUrl(null), 0)
       return
     }
     const url = URL.createObjectURL(organizerLogoFile)
-    setOrgLogoPreviewUrl(url)
-    return () => URL.revokeObjectURL(url)
+    const t = setTimeout(() => setOrgLogoPreviewUrl(url), 0)
+    return () => {
+      clearTimeout(t)
+      URL.revokeObjectURL(url)
+    }
   }, [organizerLogoFile])
 
   const displayRouteUrl = routePreviewUrl ?? currentRouteMapUrl ?? null
@@ -883,7 +933,7 @@ function Step4({
   const [reviewCatExpandedByDiscipline, setReviewCatExpandedByDiscipline] = useState<Record<string, boolean>>({})
   const [posterLoadFailed, setPosterLoadFailed] = useState(false)
   useEffect(() => {
-    setPosterLoadFailed(false)
+    setTimeout(() => setPosterLoadFailed(false), 0)
   }, [displayPosterUrl])
 
   return (
@@ -1061,14 +1111,14 @@ function CreateEventModal({
   onClose: () => void
   onSave: () => void | Promise<void>
   mode?: 'create' | 'edit'
-  initialEvent?: any
+  initialEvent?: AdminEventRow
 }) {
   const [step, setStep] = useState<Step>(1)
   const [saving, setSaving] = useState(false)
   const initialVenueParts = parseVenueCity(String(initialEvent?.venue ?? ''))
   const initialSlugs = parseRaceTypeSlugs(initialEvent as Record<string, unknown> | undefined)
   const initialPrizeFields = parsePrizePoolFields(initialEvent?.prize_pool)
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<EventFormState>({
     title: String(initialEvent?.title ?? ''),
     description: String(initialEvent?.description ?? ''),
     race_type: initialSlugs[0] ?? 'itt',
@@ -1109,8 +1159,9 @@ function CreateEventModal({
   }
 
   useEffect(() => {
-    void loadEventTypes()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    setTimeout(() => {
+      void loadEventTypes()
+    }, 0)
   }, [])
 
   const handleAddEventType = async () => {
@@ -1133,7 +1184,7 @@ function CreateEventModal({
       if (error) throw error
 
       await loadEventTypes()
-      setForm((v: any) => {
+      setForm((v) => {
         const prev = Array.isArray(v.race_types) ? v.race_types : []
         const next = [...new Set([...prev, slug])]
         return { ...v, race_types: next, race_type: next[0] ?? slug }
@@ -1156,7 +1207,7 @@ function CreateEventModal({
     banner_url: (initialEvent?.banner_url as string | undefined) ?? null,
     slug: (initialEvent?.slug as string | undefined) ?? null,
   }))
-  const [extra, setExtra] = useState({
+  const [extra, setExtra] = useState<ExtraFormState>({
     prizePool: initialEvent?.prize_pool ? 'has' : 'none',
     totalPrize: initialPrizeFields.totalPrize,
     prizeDesc: initialPrizeFields.prizeDesc,
@@ -1218,17 +1269,20 @@ function CreateEventModal({
     if (mode !== 'edit') return
     const eventId = initialEvent?.id ? String(initialEvent.id) : ''
     if (!eventId) return
-    void loadDisciplinesForEvent(eventId)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    setTimeout(() => {
+      void loadDisciplinesForEvent(eventId)
+    }, 0)
   }, [mode, initialEvent?.id])
 
   useEffect(() => {
-    setPersistedMedia({
-      poster_url: (initialEvent?.poster_url as string | undefined) ?? null,
-      route_map_url: (initialEvent?.route_map_url as string | undefined) ?? null,
-      banner_url: (initialEvent?.banner_url as string | undefined) ?? null,
-      slug: (initialEvent?.slug as string | undefined) ?? null,
-    })
+    setTimeout(() => {
+      setPersistedMedia({
+        poster_url: (initialEvent?.poster_url as string | undefined) ?? null,
+        route_map_url: (initialEvent?.route_map_url as string | undefined) ?? null,
+        banner_url: (initialEvent?.banner_url as string | undefined) ?? null,
+        slug: (initialEvent?.slug as string | undefined) ?? null,
+      })
+    }, 0)
   }, [initialEvent?.id])
 
   useEffect(() => {
@@ -1423,8 +1477,14 @@ function CreateEventModal({
               setPosterFile={setPosterFile}
               routeMapFile={routeMapFile}
               setRouteMapFile={setRouteMapFile}
-              currentPosterUrl={persistedMedia.poster_url ?? initialEvent?.poster_url ?? null}
-              currentRouteMapUrl={persistedMedia.route_map_url ?? initialEvent?.route_map_url ?? null}
+              currentPosterUrl={
+                persistedMedia.poster_url ??
+                (initialEvent?.poster_url != null ? String(initialEvent.poster_url) : null)
+              }
+              currentRouteMapUrl={
+                persistedMedia.route_map_url ??
+                (initialEvent?.route_map_url != null ? String(initialEvent.route_map_url) : null)
+              }
               eventTypes={eventTypes}
               eventTypesLoading={eventTypesLoading}
               onAddEventType={handleAddEventType}
@@ -1443,7 +1503,10 @@ function CreateEventModal({
               setExtra={setExtra}
               organizerLogoFile={organizerLogoFile}
               setOrganizerLogoFile={setOrganizerLogoFile}
-              currentOrgLogoUrl={persistedMedia.banner_url ?? initialEvent?.banner_url ?? null}
+              currentOrgLogoUrl={
+                persistedMedia.banner_url ??
+                (initialEvent?.banner_url != null ? String(initialEvent.banner_url) : null)
+              }
             />
           )}
           {step === 4 && (
@@ -1452,11 +1515,20 @@ function CreateEventModal({
               disciplines={disciplines}
               extra={extra}
               posterFile={posterFile}
-              currentPosterUrl={persistedMedia.poster_url ?? initialEvent?.poster_url ?? null}
+              currentPosterUrl={
+                persistedMedia.poster_url ??
+                (initialEvent?.poster_url != null ? String(initialEvent.poster_url) : null)
+              }
               routeMapFile={routeMapFile}
-              currentRouteMapUrl={persistedMedia.route_map_url ?? initialEvent?.route_map_url ?? null}
+              currentRouteMapUrl={
+                persistedMedia.route_map_url ??
+                (initialEvent?.route_map_url != null ? String(initialEvent.route_map_url) : null)
+              }
               organizerLogoFile={organizerLogoFile}
-              currentOrgLogoUrl={persistedMedia.banner_url ?? initialEvent?.banner_url ?? null}
+              currentOrgLogoUrl={
+                persistedMedia.banner_url ??
+                (initialEvent?.banner_url != null ? String(initialEvent.banner_url) : null)
+              }
               eventTypes={eventTypes}
             />
           )}
@@ -1485,27 +1557,327 @@ function CreateEventModal({
   )
 }
 
+/** Rider cap from events.rider_limit — handles commas, invalid values (avoids NaN in progress math). */
+function parseEventRiderLimit(raw: unknown): number {
+  if (raw == null || raw === '') return 300
+  const n = Number(String(raw).replace(/,/g, '').trim())
+  if (!Number.isFinite(n) || n <= 0) return 300
+  return Math.min(Math.floor(n), 10_000_000)
+}
+
+function safeNonNegativeInt(value: unknown): number {
+  const n = Number(value)
+  if (!Number.isFinite(n) || n < 0) return 0
+  return Math.floor(n)
+}
+
+/** Per-category cap from race_categories.rider_limit (same field as admin Step 2). */
+function parseCategoryRiderLimit(raw: unknown): number {
+  if (raw == null || raw === '') return 0
+  const n = Number(String(raw).replace(/,/g, '').trim())
+  if (!Number.isFinite(n) || n < 0) return 0
+  return Math.floor(n)
+}
+
+function EventCategoriesRegistrationModal({
+  open,
+  onClose,
+  eventId,
+  eventTitle,
+  eventRiderLimit,
+  paidTotalAllCategories,
+}: {
+  open: boolean
+  onClose: () => void
+  eventId: string
+  eventTitle: string
+  eventRiderLimit: number
+  paidTotalAllCategories: number
+}) {
+  const [loading, setLoading] = useState(false)
+  const [categoryRows, setCategoryRows] = useState<
+    Array<{ id: string; label: string; registered: number; limit: number }>
+  >([])
+
+  useEffect(() => {
+    if (!open || !eventId) return
+    let cancelled = false
+    setTimeout(() => setLoading(true), 0)
+    void (async () => {
+      try {
+        const [{ data: cats, error: catErr }, { data: regs, error: regErr }] = await Promise.all([
+          supabase
+            .from('race_categories')
+            .select('id, discipline, category_name, rider_limit')
+            .eq('event_id', eventId)
+            .order('discipline', { ascending: true })
+            .order('category_name', { ascending: true }),
+          supabase
+            .from('registration_forms')
+            .select('race_category_id')
+            .eq('event_id', eventId)
+            .eq('status', 'confirmed'),
+        ])
+        if (catErr) throw catErr
+        if (regErr) throw regErr
+
+        const countByCategory = new Map<string, number>()
+        for (const row of regs ?? []) {
+          const cid = String((row as { race_category_id?: string | null }).race_category_id ?? '')
+          if (!cid) continue
+          countByCategory.set(cid, (countByCategory.get(cid) ?? 0) + 1)
+        }
+
+        if (cancelled) return
+        const built = (cats ?? []).map((c) => {
+          const id = String((c as { id: string }).id)
+          const discipline = String((c as { discipline?: string }).discipline ?? '').trim() || '—'
+          const catName = String((c as { category_name?: string }).category_name ?? '').trim() || '—'
+          const lim = parseCategoryRiderLimit((c as { rider_limit?: unknown }).rider_limit)
+          return {
+            id,
+            label: `${discipline} · ${catName}`,
+            registered: countByCategory.get(id) ?? 0,
+            limit: lim,
+          }
+        })
+        setCategoryRows(built)
+      } catch (e) {
+        if (!cancelled) {
+          toast.error((e as Error).message || 'Failed to load category stats.')
+          setCategoryRows([])
+        }
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [open, eventId])
+
+  const totalFillPct =
+    eventRiderLimit > 0
+      ? Math.min(100, Math.max(0, (paidTotalAllCategories / eventRiderLimit) * 100))
+      : 0
+
+  if (!open) return null
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 p-4 sm:p-6"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="event-cat-reg-modal-title"
+    >
+      <div className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-slate-200 bg-slate-50 px-5 py-4">
+          <div className="min-w-0">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Registration by category</p>
+            <h2 id="event-cat-reg-modal-title" className="mt-1 text-lg font-semibold text-slate-900 sm:text-xl">
+              {eventTitle}
+            </h2>
+            <p className="mt-1 text-xs text-slate-600">
+              Paid registrations are counted when registration status is <span className="font-medium">confirmed</span>.
+              Fill % uses each category&apos;s rider limit from event setup.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="shrink-0 rounded-lg p-2 text-slate-500 hover:bg-white hover:text-slate-800"
+            aria-label="Close"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-auto px-5 py-4">
+          {!loading && categoryRows.length > 0 && paidTotalAllCategories === 0 ? (
+            <div className="mb-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-center">
+              <UserCheck className="mx-auto h-10 w-10 text-slate-300" />
+              <p className="mt-2 text-sm font-semibold text-slate-800">No registrations yet</p>
+              <p className="mt-1 text-xs text-slate-600">
+                There are no confirmed (paid) registrations for this event. Category limits below are shown for planning;
+                counts update automatically after riders complete payment.
+              </p>
+            </div>
+          ) : null}
+          {loading ? (
+            <div className="space-y-2 py-4">
+              <p className="text-sm text-slate-600">Loading categories…</p>
+              {[1, 2, 3].map((k) => (
+                <div key={k} className="h-10 animate-pulse rounded-lg bg-slate-100" />
+              ))}
+            </div>
+          ) : categoryRows.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-6 py-10 text-center">
+              <Users className="mx-auto h-10 w-10 text-slate-300" />
+              <p className="mt-3 text-sm font-semibold text-slate-700">No categories configured</p>
+              <p className="mt-1 text-xs text-slate-500">Add disciplines and categories when editing this event to see breakdown here.</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto rounded-xl border border-slate-200">
+              <table className="min-w-[560px] w-full divide-y divide-slate-200 text-sm">
+                <thead className="bg-slate-50">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+                      Category
+                    </th>
+                    <th className="whitespace-nowrap px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-600">
+                      Registered (paid)
+                    </th>
+                    <th className="whitespace-nowrap px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-600">
+                      Limit
+                    </th>
+                    <th className="min-w-[140px] px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+                      Fill %
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 bg-white">
+                  {categoryRows.map((row) => {
+                    const fillPct =
+                      row.limit > 0 ? Math.min(100, Math.max(0, (row.registered / row.limit) * 100)) : null
+                    const fillLabel =
+                      row.limit > 0
+                        ? fillPct !== null && fillPct > 0 && fillPct < 1
+                          ? `${fillPct.toFixed(1)}%`
+                          : `${Math.round(fillPct ?? 0)}%`
+                        : row.registered > 0
+                          ? '—'
+                          : '0%'
+                    const barW = row.limit > 0 && fillPct !== null ? Math.min(100, fillPct) : 0
+                    return (
+                      <tr key={row.id} className="hover:bg-slate-50/80">
+                        <td className="px-4 py-3 font-medium text-slate-900">{row.label}</td>
+                        <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums text-slate-800">
+                          {row.registered.toLocaleString()}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums text-slate-700">
+                          {row.limit > 0 ? row.limit.toLocaleString() : '—'}
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
+                            <span className="w-12 shrink-0 text-xs font-medium tabular-nums text-slate-600">{fillLabel}</span>
+                            <div className="h-2 min-w-0 flex-1 rounded-full bg-slate-200">
+                              <div
+                                className="h-full rounded-full bg-blue-500 transition-all"
+                                style={{ width: `${barW}%` }}
+                              />
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+                <tfoot className="border-t-2 border-slate-200 bg-slate-50">
+                  <tr>
+                    <td className="px-4 py-3 font-semibold text-slate-900">Event total</td>
+                    <td className="whitespace-nowrap px-4 py-3 text-right text-base font-bold tabular-nums text-blue-700">
+                      {paidTotalAllCategories.toLocaleString()}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-right font-semibold tabular-nums text-slate-800">
+                      {eventRiderLimit.toLocaleString()}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
+                        <span className="w-12 shrink-0 text-xs font-semibold tabular-nums text-slate-700">
+                          {eventRiderLimit > 0
+                            ? totalFillPct > 0 && totalFillPct < 1
+                              ? `${totalFillPct.toFixed(1)}%`
+                              : `${Math.round(totalFillPct)}%`
+                            : '—'}
+                        </span>
+                        <div className="h-2 min-w-0 flex-1 rounded-full bg-slate-200">
+                          <div
+                            className="h-full rounded-full bg-emerald-500 transition-all"
+                            style={{ width: `${totalFillPct}%` }}
+                          />
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end border-t border-slate-200 bg-slate-50 px-5 py-4">
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-full rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 sm:w-auto sm:min-w-[120px]"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** Event card only: turn comma-separated `events.race_type` slugs into readable labels. */
+function formatEventCardRaceTypeSegment(slug: string): string {
+  const s = slug.trim().toLowerCase()
+  if (!s) return ''
+  if (s === 'itt') return 'ITT'
+  return s
+    .split('_')
+    .map((w) => (w ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : ''))
+    .filter(Boolean)
+    .join(' ')
+}
+
+function eventCardRaceTypeLabels(raw: unknown): string[] {
+  const str = String(raw ?? '').trim()
+  if (!str) return ['Race']
+  const labels = str
+    .split(',')
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .map(formatEventCardRaceTypeSegment)
+    .filter(Boolean)
+  return labels.length ? labels : ['Race']
+}
+
 // ─── Event card ──────────────────────────────────────────────────────────────
 function EventCard({
   event,
   busy,
+  paidRegistrationCount,
   onEdit,
   onDuplicate,
   onTogglePublish,
   onDelete,
+  onViewRegistrations,
 }: {
-  event: any
+  event: AdminEventRow
   busy: boolean
-  onEdit: (event: any) => void
-  onDuplicate: (event: any) => void
-  onTogglePublish: (event: any) => void
-  onDelete: (event: any) => void
+  paidRegistrationCount: number
+  onEdit: (event: AdminEventRow) => void
+  onDuplicate: (event: AdminEventRow) => void
+  onTogglePublish: (event: AdminEventRow) => void
+  onDelete: (event: AdminEventRow) => void
+  onViewRegistrations: () => void
 }) {
   const isPublished = String(event.status ?? '').toLowerCase() === 'published'
-  const registrations = Number(event.total_registrations ?? 0)
-  const riderLimit = Number(event.rider_limit ?? 300)
-  const pct = riderLimit > 0 ? Math.round((registrations / riderLimit) * 100) : 0
+  const registrations = safeNonNegativeInt(paidRegistrationCount)
+  const riderLimit = parseEventRiderLimit(event.rider_limit)
+  const pctNum = riderLimit > 0 ? (registrations / riderLimit) * 100 : 0
+  const barPct = Number.isFinite(pctNum) ? Math.min(100, Math.max(0, pctNum)) : 0
+  const pctLabel =
+    !Number.isFinite(pctNum) || pctNum <= 0
+      ? '0%'
+      : pctNum >= 100
+        ? '100%'
+        : pctNum < 10
+          ? `${pctNum.toFixed(1)}%`
+          : `${Math.round(pctNum)}%`
   const venue = String(event.venue ?? 'TBD')
+  const raceTypeLabels = eventCardRaceTypeLabels(event.race_type)
 
   return (
     <article className="rounded-xl border border-slate-200 bg-white p-3">
@@ -1526,10 +1898,20 @@ function EventCard({
             <span className="flex items-center gap-1"><Clock3 className="h-3.5 w-3.5" />{formatTime(event.start_time ?? '6:00 AM')}</span>
             <span className="flex items-center gap-1"><MapPinned className="h-3.5 w-3.5" />{venue}</span>
           </div>
-          <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
-            <span className="flex items-center gap-1">🚴 {String(event.race_type ?? 'Race')}</span>
+          <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-slate-500">
+            <span className="inline-flex flex-wrap items-center gap-1.5" title={String(event.race_type ?? '')}>
+              <span aria-hidden>🚴</span>
+              {raceTypeLabels.map((label, i) => (
+                <span
+                  key={`${label}-${i}`}
+                  className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-700"
+                >
+                  {label}
+                </span>
+              ))}
+            </span>
             <span className="flex items-center gap-1">{formatMoney(event.registration_fee)}</span>
-            <span className="flex items-center gap-1"><Users className="h-3.5 w-3.5" />{riderLimit} Riders Limit</span>
+            <span className="flex items-center gap-1"><Users className="h-3.5 w-3.5" />{riderLimit.toLocaleString()} Riders Limit</span>
           </div>
         </div>
 
@@ -1537,13 +1919,23 @@ function EventCard({
           <p className="text-xs text-slate-500">Registration Deadline</p>
           <p className="text-xs font-medium text-red-500">{formatDate(event.registration_deadline ?? event.event_date)}</p>
           <div className="mt-2">
-            <p className="text-xs text-slate-500">Registrations</p>
-            <p className="text-xs font-bold text-blue-600">{registrations} / {riderLimit}</p>
+            <p className="text-xs text-slate-500">Paid registrations</p>
+            <p className="text-xs font-bold text-blue-600">
+              {registrations.toLocaleString()} / {riderLimit.toLocaleString()}
+            </p>
             <div className="mt-1 h-1.5 w-full rounded-full bg-slate-200">
-              <div className="h-full rounded-full bg-blue-500 transition-all" style={{ width: `${pct}%` }} />
+              <div className="h-full rounded-full bg-blue-500 transition-all" style={{ width: `${barPct}%` }} />
             </div>
-            <p className="text-right text-[10px] text-slate-400 mt-0.5">{pct}%</p>
+            <p className="text-right text-[10px] text-slate-400 mt-0.5">{pctLabel}</p>
           </div>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onViewRegistrations}
+            className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-800 transition-colors hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <UserCheck className="h-3.5 w-3.5" /> View Registrations
+          </button>
         </div>
 
         <div className="space-y-2">
@@ -1599,7 +1991,14 @@ export function AdminEventsManagement() {
   const [statusFilter, setStatusFilter] = useState('all')
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [busyEventId, setBusyEventId] = useState<string | null>(null)
-  const [editingEvent, setEditingEvent] = useState<any | null>(null)
+  const [editingEvent, setEditingEvent] = useState<AdminEventRow | null>(null)
+  const [paidCountByEventId, setPaidCountByEventId] = useState<Record<string, number>>({})
+  const [eventCategoriesModal, setEventCategoriesModal] = useState<{
+    eventId: string
+    title: string
+    riderLimit: number
+    paidTotal: number
+  } | null>(null)
 
   const events = data?.events ?? []
   const filteredEvents = useMemo(() => {
@@ -1617,15 +2016,55 @@ export function AdminEventsManagement() {
     })
   }, [events, search, statusFilter, categoryFilter])
 
+  const eventIdsKey = useMemo(
+    () =>
+      events
+        .map((e) => String((e as { id?: string }).id ?? ''))
+        .filter(Boolean)
+        .sort()
+        .join(','),
+    [events],
+  )
+
+  useEffect(() => {
+    const ids = eventIdsKey ? eventIdsKey.split(',').filter(Boolean) : []
+    if (ids.length === 0) {
+      setTimeout(() => setPaidCountByEventId({}), 0)
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      const counts: Record<string, number> = {}
+      await Promise.all(
+        ids.map(async (eid) => {
+          const { count, error: err } = await supabase
+            .from('registration_forms')
+            .select('*', { count: 'exact', head: true })
+            .eq('event_id', eid)
+            .eq('status', 'confirmed')
+          if (err) {
+            counts[eid] = 0
+            return
+          }
+          counts[eid] = typeof count === 'number' && Number.isFinite(count) ? count : 0
+        }),
+      )
+      if (!cancelled) setPaidCountByEventId(counts)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [eventIdsKey, refreshKey])
+
   const totalRegistrations = events.reduce((t, e) => t + Number(e.total_registrations ?? 0), 0)
   const publishedCount = events.filter((e) => String(e.status ?? '').toLowerCase() === 'published').length
   const draftCount = events.filter((e) => String(e.status ?? '').toLowerCase() !== 'published').length
 
-  const handleEditEvent = async (event: any) => {
+  const handleEditEvent = async (event: AdminEventRow) => {
     setEditingEvent(event)
   }
 
-  const handleDuplicateEvent = async (event: any) => {
+  const handleDuplicateEvent = async (event: AdminEventRow) => {
     setBusyEventId(String(event.id))
     try {
       const title = String(event.title ?? 'Untitled')
@@ -1667,7 +2106,7 @@ export function AdminEventsManagement() {
     }
   }
 
-  const handleTogglePublishEvent = async (event: any) => {
+  const handleTogglePublishEvent = async (event: AdminEventRow) => {
     const currentlyPublished = String(event.status ?? '').toLowerCase() === 'published'
     setBusyEventId(String(event.id))
     try {
@@ -1678,7 +2117,7 @@ export function AdminEventsManagement() {
           published_at: currentlyPublished ? null : new Date().toISOString(),
           updated_at: new Date().toISOString(),
         })
-        .eq('id', event.id)
+        .eq('id', String(event.id))
       if (error) throw error
       toast.success(currentlyPublished ? 'Event set to draft.' : 'Event published.')
       setRefreshKey((v) => v + 1)
@@ -1689,11 +2128,11 @@ export function AdminEventsManagement() {
     }
   }
 
-  const handleDeleteEvent = async (event: any) => {
+  const handleDeleteEvent = async (event: AdminEventRow) => {
     if (!window.confirm(`Delete "${String(event.title ?? 'this event')}"?`)) return
     setBusyEventId(String(event.id))
     try {
-      const { error } = await supabase.from('events').delete().eq('id', event.id)
+      const { error } = await supabase.from('events').delete().eq('id', String(event.id))
       if (error) throw error
       toast.success('Event deleted.')
       setRefreshKey((v) => v + 1)
@@ -1804,10 +2243,19 @@ export function AdminEventsManagement() {
                 key={String(event.id ?? index)}
                 event={event}
                 busy={busyEventId === String(event.id)}
+                paidRegistrationCount={safeNonNegativeInt(paidCountByEventId[String(event.id ?? '')])}
                 onEdit={handleEditEvent}
                 onDuplicate={handleDuplicateEvent}
                 onTogglePublish={handleTogglePublishEvent}
                 onDelete={handleDeleteEvent}
+                onViewRegistrations={() =>
+                  setEventCategoriesModal({
+                    eventId: String(event.id),
+                    title: String(event.title ?? 'Event'),
+                    riderLimit: parseEventRiderLimit(event.rider_limit),
+                    paidTotal: safeNonNegativeInt(paidCountByEventId[String(event.id ?? '')]),
+                  })
+                }
               />
             ))
           )}
@@ -1825,6 +2273,15 @@ export function AdminEventsManagement() {
           </div>
         )}
       </section>
+
+      <EventCategoriesRegistrationModal
+        open={Boolean(eventCategoriesModal)}
+        onClose={() => setEventCategoriesModal(null)}
+        eventId={eventCategoriesModal?.eventId ?? ''}
+        eventTitle={eventCategoriesModal?.title ?? ''}
+        eventRiderLimit={eventCategoriesModal?.riderLimit ?? 300}
+        paidTotalAllCategories={eventCategoriesModal?.paidTotal ?? 0}
+      />
 
       {/* Modal */}
       {isCreateOpen && <CreateEventModal onClose={() => setIsCreateOpen(false)} onSave={handleSave} />}
