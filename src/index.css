@@ -44,3 +44,12 @@ a {
 *::-webkit-scrollbar-thumb:hover {
   background: #f8fafc;
 }
+
+@keyframes cert-preview-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}

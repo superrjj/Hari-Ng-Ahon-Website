@@ -531,11 +531,16 @@ export function RegistrationPaymentSuccess() {
                 </p>
               </div>
 
-              {certificatePreviewUrl ? (
-                <div className="rounded-lg border border-slate-200 bg-white p-2">
+              <div className="rounded-lg border border-slate-200 bg-white p-2">
+                {certificatePreviewUrl ? (
                   <img src={certificatePreviewUrl} alt="QR Certificate Preview" className="w-full rounded-md" />
-                </div>
-              ) : null}
+                ) : (
+                  <div
+                    className="aspect-video w-full rounded-md bg-gradient-to-r from-slate-200 via-slate-100 to-slate-200 bg-[length:200%_100%] animate-[cert-preview-shimmer_1.4s_ease-in-out_infinite]"
+                    aria-hidden
+                  />
+                )}
+              </div>
 
               {siblingCertsToRender.length > 0 ? (
                 <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-800">
