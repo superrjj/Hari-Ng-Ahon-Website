@@ -170,6 +170,15 @@ Deno.serve(async (req) => {
         email: form?.registrant_email ?? null,
         origin: req.headers.get('origin'),
       })
+      const { error: csErr } = await supabase
+        .from('payment_orders')
+        .update({
+          paymongo_checkout_session_id: checkout.checkoutSessionId,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', existingOrder.id)
+      if (csErr) return textResponse(csErr.message, 500)
+
       return Response.json(
         {
           paymentOrderId: existingOrder.id,
@@ -238,6 +247,15 @@ Deno.serve(async (req) => {
   }
 
   if (statusUpdateError) return textResponse(statusUpdateError.message, 500)
+
+  const { error: csErr } = await supabase
+    .from('payment_orders')
+    .update({
+      paymongo_checkout_session_id: checkout.checkoutSessionId,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', order.id)
+  if (csErr) return textResponse(csErr.message, 500)
 
   return Response.json(
     {

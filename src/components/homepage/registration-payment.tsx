@@ -515,6 +515,14 @@ export function RegistrationPayment() {
         acceptRules: true,
       })
       if (!payment.checkoutUrl) throw new Error('Missing checkout URL from payment provider.')
+      const cs = String(payment.checkoutSessionId ?? '').trim()
+      if (cs) {
+        try {
+          sessionStorage.setItem('paymongo_checkout_session', cs)
+        } catch {
+          /* ignore quota / private mode */
+        }
+      }
       window.location.assign(payment.checkoutUrl)
     } catch (e) {
       setError((e as Error).message)

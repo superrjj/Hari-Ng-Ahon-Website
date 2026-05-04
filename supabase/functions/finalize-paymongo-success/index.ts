@@ -5,6 +5,7 @@ import { assignBibIfMissing, finalizeBundleSiblingsPaid } from '../_shared/regis
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+const PAYMONGO_SECRET_KEY = Deno.env.get('PAYMONGO_SECRET_KEY')!
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 const corsHeaders = {
@@ -17,6 +18,31 @@ function jsonResponse(body: Record<string, unknown>, status: number) {
     status,
     headers: { ...corsHeaders, 'content-type': 'application/json' },
   })
+}
+
+/** Resolve PayMongo Payment ID (pay_…) from a completed checkout session (redirect path; webhooks may also set this). */
+async function resolvePaymongoPaymentIdFromCheckoutSession(checkoutSessionId: string): Promise<string | null> {
+  const key = String(PAYMONGO_SECRET_KEY ?? '').trim()
+  const cs = String(checkoutSessionId ?? '').trim()
+  if (!key || !cs) return null
+  const auth = btoa(`${key}:`)
+  const res = await fetch(`https://api.paymongo.com/v1/checkout_sessions/${encodeURIComponent(cs)}`, {
+    headers: { accept: 'application/json', authorization: `Basic ${auth}` },
+  })
+  const json = await res.json().catch(() => null)
+  if (!res.ok) return null
+  const payments = json?.data?.attributes?.payments
+  if (!Array.isArray(payments)) return null
+  for (const p of payments) {
+    const id = p?.id ? String(p.id).trim() : ''
+    const status = String(p?.attributes?.status ?? '').toLowerCase()
+    if (id.startsWith('pay_') && status === 'paid') return id
+  }
+  for (const p of payments) {
+    const id = p?.id ? String(p.id).trim() : ''
+    if (id.startsWith('pay_')) return id
+  }
+  return null
 }
 
 Deno.serve(async (req) => {
@@ -33,7 +59,7 @@ Deno.serve(async (req) => {
   }
   const userId = authData.user.id
 
-  let body: { registrationId?: string }
+  let body: { registrationId?: string; checkoutSessionId?: string }
   try {
     body = await req.json()
   } catch {
@@ -41,6 +67,7 @@ Deno.serve(async (req) => {
   }
 
   const registrationId = String(body.registrationId ?? '').trim()
+  const bodyCheckoutSessionId = String(body.checkoutSessionId ?? '').trim()
   if (!registrationId) return jsonResponse({ error: 'Missing registrationId' }, 400)
 
   const { data: registration, error: regLookupError } = await supabase
@@ -84,7 +111,9 @@ Deno.serve(async (req) => {
 
   let { data: order, error: orderLookupError } = await supabase
     .from('payment_orders')
-    .select('id, status, amount, currency, provider_reference, registration_id, checkout_bundle_id')
+    .select(
+      'id, status, amount, currency, provider_reference, registration_id, checkout_bundle_id, paymongo_checkout_session_id',
+    )
     .eq('registration_id', registrationId)
     .order('created_at', { ascending: false })
     .limit(1)
@@ -97,7 +126,9 @@ Deno.serve(async (req) => {
     const bundle = String(registration.checkout_bundle_id).trim()
     const { data: bundleOrder, error: bundleOrderErr } = await supabase
       .from('payment_orders')
-      .select('id, status, amount, currency, provider_reference, registration_id, checkout_bundle_id')
+      .select(
+        'id, status, amount, currency, provider_reference, registration_id, checkout_bundle_id, paymongo_checkout_session_id',
+      )
       .eq('checkout_bundle_id', bundle)
       .order('created_at', { ascending: false })
       .limit(1)
@@ -125,12 +156,20 @@ Deno.serve(async (req) => {
   if (!order?.id) return jsonResponse({ error: 'Payment order not found for registration.' }, 404)
 
   if (String(order.status).toLowerCase() !== 'paid') {
+    let providerRef = String(order.provider_reference ?? '').trim() || null
+    const checkoutSessionId =
+      String(order.paymongo_checkout_session_id ?? '').trim() || bodyCheckoutSessionId || ''
+    if (!providerRef && checkoutSessionId) {
+      providerRef = await resolvePaymongoPaymentIdFromCheckoutSession(checkoutSessionId)
+    }
+
     const { error: orderUpdateError } = await supabase
       .from('payment_orders')
       .update({
         status: 'paid',
         paid_at: now,
         updated_at: now,
+        ...(providerRef ? { provider_reference: providerRef } : {}),
       })
       .eq('id', order.id)
     if (orderUpdateError) return jsonResponse({ error: orderUpdateError.message }, 500)
@@ -142,13 +181,28 @@ Deno.serve(async (req) => {
       currency: String(order.currency ?? 'PHP'),
       paid_at: now,
       provider_event_type: 'checkout_success_redirect',
-      provider_reference: order.provider_reference ?? null,
+      provider_reference: providerRef,
       raw_payload: {
         source: 'edge_finalize_paymongo_success',
         registration_id: registrationId,
+        checkout_session_id: checkoutSessionId || null,
       },
     })
     if (txInsertError) return jsonResponse({ error: txInsertError.message }, 500)
+  } else {
+    const existingRef = String(order.provider_reference ?? '').trim()
+    const checkoutSessionId =
+      String(order.paymongo_checkout_session_id ?? '').trim() || bodyCheckoutSessionId || ''
+    if (!existingRef && checkoutSessionId) {
+      const providerRef = await resolvePaymongoPaymentIdFromCheckoutSession(checkoutSessionId)
+      if (providerRef) {
+        const { error: refOnlyErr } = await supabase
+          .from('payment_orders')
+          .update({ provider_reference: providerRef, updated_at: now })
+          .eq('id', order.id)
+        if (refOnlyErr) return jsonResponse({ error: refOnlyErr.message }, 500)
+      }
+    }
   }
 
   const { error: registrationUpdateError } = await supabase

@@ -313,6 +313,7 @@ export const registrationService = {
     return {
       paymentOrderId: data.paymentOrderId as string,
       checkoutUrl: data.checkoutUrl as string | undefined,
+      checkoutSessionId: (data.checkoutSessionId as string | undefined) ?? undefined,
     }
   },
 
@@ -446,11 +447,18 @@ export const registrationService = {
     return ids.length > 0 ? ids : [registrationId]
   },
 
-  async markRegistrationAsPaidAfterPaymongoRedirect(registrationId: string) {
+  async markRegistrationAsPaidAfterPaymongoRedirect(
+    registrationId: string,
+    opts?: { checkoutSessionId?: string | null },
+  ) {
     const headers = await getAuthHeaders()
+    const checkoutSessionId = String(opts?.checkoutSessionId ?? '').trim()
     const { data, error } = await supabase.functions.invoke('finalize-paymongo-success', {
       headers,
-      body: { registrationId },
+      body: {
+        registrationId,
+        ...(checkoutSessionId ? { checkoutSessionId } : {}),
+      },
     })
     if (error) {
       const raw = await getEdgeFunctionErrorMessage(error, 'Unable to finalize payment and assign bib.')
@@ -592,8 +600,6 @@ export const registrationService = {
   }) {
     const recipient = args.recipient.trim()
     if (!recipient) throw new Error('Missing recipient email.')
-    const { data: authData } = await supabase.auth.getSession()
-    const userId = authData.session?.user?.id ?? null
     const { data: existingDelivery, error: existingDeliveryError } = await supabase
       .from('notification_deliveries')
       .select('id, status')
@@ -610,7 +616,7 @@ export const registrationService = {
       return { queued: false, reason: 'already_queued' as const }
     }
     const { error } = await supabase.from('notification_deliveries').insert({
-      user_id: userId,
+      user_id: null,
       registration_id: args.registrationId,
       channel: 'email',
       recipient,

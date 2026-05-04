@@ -90,16 +90,21 @@ async function svgToPng(svg: string): Promise<Uint8Array> {
     wasmInitialised = true
   }
 
-  // Fetch Inter font variants from Google Fonts static CDN so resvg can render text.
-  // Without embedded fonts resvg renders all text as blank in the Deno edge runtime.
+  // Inter WOFF2 for resvg: without glyphs, all <text> renders blank (QR/images still show).
+  // jsDelivr is more reliable from Supabase Edge than fonts.gstatic.com in some regions.
+  const fontBase = 'https://cdn.jsdelivr.net/npm/@fontsource/inter@5.0.18/files'
   const fontUrls = [
-    'https://fonts.gstatic.com/s/inter/v13/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuLyfAZ9hiJ-Ek-_EeA.woff2', // 400
-    'https://fonts.gstatic.com/s/inter/v13/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuGKYAZ9hiJ-Ek-_EeA.woff2', // 700
-    'https://fonts.gstatic.com/s/inter/v13/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuDyYAZ9hiJ-Ek-_EeA.woff2', // 800
+    `${fontBase}/inter-latin-400-normal.woff2`,
+    `${fontBase}/inter-latin-700-normal.woff2`,
+    `${fontBase}/inter-latin-800-normal.woff2`,
+    `${fontBase}/inter-latin-900-normal.woff2`,
   ]
   const fontBuffers = (await Promise.all(fontUrls.map(fetchFontBuffer))).filter(
     (b): b is Uint8Array => b !== null,
   )
+  if (fontBuffers.length === 0) {
+    console.warn('[send-race-claim-certificate-email] svgToPng: no font buffers loaded; PNG text may be blank')
+  }
 
   const resvg = new Resvg(svg, {
     fitTo: { mode: 'width', value: 1280 },
@@ -390,8 +395,9 @@ Deno.serve(async (req) => {
   console.log('[send-race-claim-certificate-email] Resend accepted for', registrationId, recipient)
 
   const now = new Date().toISOString()
+  // Do not store auth JWT id in user_id when FK targets public.users — use null unless you mirror auth into users.
   const { error: insertErr } = await supabaseAdmin.from('notification_deliveries').insert({
-    user_id: userId,
+    user_id: null,
     registration_id: registrationId,
     channel: 'email',
     recipient,

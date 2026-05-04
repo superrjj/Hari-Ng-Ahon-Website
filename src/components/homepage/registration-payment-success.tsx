@@ -313,9 +313,22 @@ export function RegistrationPaymentSuccess() {
 
       setNeedsLoginToFinalize(false)
       try {
+        let checkoutSessionId: string | undefined
+        try {
+          checkoutSessionId = sessionStorage.getItem('paymongo_checkout_session')?.trim() || undefined
+        } catch {
+          checkoutSessionId = undefined
+        }
         const bundleIds = await registrationService.listCheckoutBundleRegistrationIds(registrationId)
         for (const regId of bundleIds) {
-          await registrationService.markRegistrationAsPaidAfterPaymongoRedirect(regId)
+          await registrationService.markRegistrationAsPaidAfterPaymongoRedirect(regId, { checkoutSessionId })
+        }
+        if (checkoutSessionId) {
+          try {
+            sessionStorage.removeItem('paymongo_checkout_session')
+          } catch {
+            /* ignore */
+          }
         }
       } catch (e) {
         if (mounted) {
@@ -353,9 +366,22 @@ export function RegistrationPaymentSuccess() {
     try {
       if (registrationId && session?.access_token) {
         try {
+          let checkoutSessionId: string | undefined
+          try {
+            checkoutSessionId = sessionStorage.getItem('paymongo_checkout_session')?.trim() || undefined
+          } catch {
+            checkoutSessionId = undefined
+          }
           const bundleIds = await registrationService.listCheckoutBundleRegistrationIds(registrationId)
           for (const regId of bundleIds) {
-            await registrationService.markRegistrationAsPaidAfterPaymongoRedirect(regId)
+            await registrationService.markRegistrationAsPaidAfterPaymongoRedirect(regId, { checkoutSessionId })
+          }
+          if (checkoutSessionId) {
+            try {
+              sessionStorage.removeItem('paymongo_checkout_session')
+            } catch {
+              /* ignore */
+            }
           }
         } catch (e) {
           setError((e as Error).message || 'Failed to finalize payment.')
