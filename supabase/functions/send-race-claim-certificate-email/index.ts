@@ -390,43 +390,18 @@ Deno.serve(async (req) => {
     /* ignore */
   }
 
+  // This function now expects the certificate PNG to be uploaded by the app (client-side)
+  // right after payment success. Server-side SVG rendering has proven unreliable in edge.
   if (!pngBytes) {
-    const [allOutLogoDataUrl, hnaLogoDataUrl] = await Promise.all([
-      fetchDataUrl('/all_out_multisports_1.png'),
-      fetchDataUrl('/hna-logo.png'),
-    ])
-
-    const svg = buildCertificateSvg({
-      riderName,
-      eventTitle,
-      bibNumber,
-      category,
-      discipline,
-      eventType,
-      verificationId,
-      qrDataUrl,
-      allOutLogoDataUrl,
-      hnaLogoDataUrl,
-    })
-
-    try {
-      const rawPng = await svgToPng(svg)
-      pngBytes = await optimisePng(rawPng)
-    } catch (e) {
-      console.error('svgToPng failed', e)
-      return jsonResponse({ error: 'Failed to render certificate image.' }, 500)
-    }
-
-    const uploadRes = await supabaseAdmin.storage.from(CERT_BUCKET).upload(objectPath, pngBytes, {
-      contentType: 'image/png',
-      upsert: true,
-      cacheControl: '31536000',
-    })
-    if (uploadRes.error) {
-      console.warn('[certificate] failed to upload; continuing to email inline', uploadRes.error.message)
-    } else {
-      console.log('[certificate] uploaded', CERT_BUCKET, objectPath, `(${pngBytes.length} bytes)`)
-    }
+    return jsonResponse(
+      {
+        error: 'Certificate image not found in storage yet.',
+        code: 'CERT_NOT_UPLOADED',
+        storage_bucket: CERT_BUCKET,
+        storage_path: objectPath,
+      },
+      409,
+    )
   }
 
   const pngBase64 = bytesToBase64(pngBytes)

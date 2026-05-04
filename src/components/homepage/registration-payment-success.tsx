@@ -3,7 +3,20 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { supabase } from '../../lib/supabase'
-import { registrationService, type RegistrationCertificateData } from '../../services/registrationService'
+import { registrationService, reloadPageIfSessionExpiredInvokeError, type RegistrationCertificateData } from '../../services/registrationService'
+
+const CERT_BUCKET = String(import.meta.env.VITE_CERT_BUCKET ?? '').trim()
+
+function certObjectPath(registrationId: string, bibNumber: string) {
+  const safeBib = String(bibNumber ?? '').replace(/[^a-zA-Z0-9_-]/g, '')
+  const safeReg = String(registrationId ?? '').replace(/[^a-zA-Z0-9_-]/g, '')
+  return `race-claim-kit/${safeReg || 'reg'}-${safeBib || 'bib'}.png`
+}
+
+async function dataUrlToBlob(dataUrl: string): Promise<Blob> {
+  const res = await fetch(dataUrl)
+  return await res.blob()
+}
 
 async function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
@@ -48,11 +61,30 @@ export function RegistrationPaymentSuccess() {
     Record<string, string | null>
   >({})
   const [autoEmailMessage, setAutoEmailMessage] = useState<string | null>(null)
+  const [storageUploadMessage, setStorageUploadMessage] = useState<string | null>(null)
   const [needsLoginToFinalize, setNeedsLoginToFinalize] = useState(false)
   /** Every registration line in this checkout (same order as DB); previews keyed by registrationId */
   const [bundleCertificateRows, setBundleCertificateRows] = useState<
     Array<{ registrationId: string; data: RegistrationCertificateData }>
   >([])
+
+  const uploadCertificatePngToStorage = useCallback(
+    async (rid: string, dataUrl: string, bibNumber: string) => {
+      if (!CERT_BUCKET) throw new Error('Missing VITE_CERT_BUCKET (certificate storage bucket name).')
+      const key = `cert-storage-uploaded:${rid}`
+      if (window.localStorage.getItem(key) === '1') return
+      const blob = await dataUrlToBlob(dataUrl)
+      const path = certObjectPath(rid, bibNumber)
+      const { error } = await supabase.storage.from(CERT_BUCKET).upload(path, blob, {
+        upsert: true,
+        contentType: 'image/png',
+        cacheControl: '31536000',
+      })
+      if (error) throw error
+      window.localStorage.setItem(key, '1')
+    },
+    [],
+  )
 
   const renderCertificateToDataUrl = useCallback(
     async (data: RegistrationCertificateData, mimeType: 'image/png' | 'image/jpeg') => {
@@ -425,6 +457,44 @@ export function RegistrationPaymentSuccess() {
     }
   }, [previewRows, renderCertificateToDataUrl])
 
+  // Upload the *client-rendered* PNG to Storage after payment is confirmed.
+  useEffect(() => {
+    if (!certificateData?.isPaid) return
+    if (!session?.access_token) return
+    if (!CERT_BUCKET) {
+      setStorageUploadMessage('Certificate storage is not configured (VITE_CERT_BUCKET).')
+      return
+    }
+    if (previewRows.length === 0) return
+
+    let active = true
+    void (async () => {
+      try {
+        setStorageUploadMessage('Saving your certificate to storage…')
+        for (const row of previewRows) {
+          const url = bundleCertificatePreviewUrls[row.registrationId]
+          const bib = String(row.data.bibNumber ?? '').trim()
+          if (!url || !bib) continue
+          await uploadCertificatePngToStorage(row.registrationId, url, bib)
+        }
+        if (active) setStorageUploadMessage(null)
+      } catch (e) {
+        if (!active) return
+        setStorageUploadMessage((e as Error).message || 'Failed to save certificate to storage.')
+      }
+    })()
+
+    return () => {
+      active = false
+    }
+  }, [
+    bundleCertificatePreviewUrls,
+    certificateData?.isPaid,
+    previewRows,
+    session?.access_token,
+    uploadCertificatePngToStorage,
+  ])
+
   useEffect(() => {
     let active = true
     async function sendRaceClaimCertificateEmail() {
@@ -465,6 +535,17 @@ export function RegistrationPaymentSuccess() {
             continue
           }
 
+          const row = previewRows.find((r) => r.registrationId === regId)
+          const url = row ? bundleCertificatePreviewUrls[row.registrationId] : null
+          const bib = String(row?.data?.bibNumber ?? '').trim()
+          if (url && bib) {
+            try {
+              await uploadCertificatePngToStorage(regId, url, bib)
+            } catch {
+              // Email function will return 409 if the PNG isn't in storage yet.
+            }
+          }
+
           const { data, error } = await supabase.functions.invoke('send-race-claim-certificate-email', {
             headers: { Authorization: `Bearer ${token}` },
             body: { registrationId: regId },
@@ -472,7 +553,13 @@ export function RegistrationPaymentSuccess() {
           if (!active) return
 
           if (error) {
+            if (await reloadPageIfSessionExpiredInvokeError(error, '')) {
+              await new Promise(() => {})
+            }
             const raw = (error as { message?: string }).message ?? ''
+            if (raw.includes('CERT_NOT_UPLOADED') || raw.toLowerCase().includes('certificate image not found')) {
+              continue
+            }
             if (raw.toLowerCase().includes('resend') || raw.includes('503')) {
               mailUnavailable = true
               break
@@ -717,6 +804,7 @@ export function RegistrationPaymentSuccess() {
                 </p>
               ) : null}
 
+              {storageUploadMessage ? <p className="text-sm text-slate-600">{storageUploadMessage}</p> : null}
               {autoEmailMessage ? <p className="text-sm text-slate-600">{autoEmailMessage}</p> : null}
             </div>
           ) : null}

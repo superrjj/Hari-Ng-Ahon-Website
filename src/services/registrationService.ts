@@ -205,6 +205,54 @@ async function getEdgeFunctionErrorMessage(error: unknown, fallback: string): Pr
   return message?.trim() ? message : fallback
 }
 
+const AUTH_RELOAD_GUARD_KEY = 'hna_edge_auth_reload_ts'
+
+function parseEdgeFunctionErrorBody(raw: string): { message: string; code: string } {
+  const t = String(raw ?? '').trim()
+  if (t.startsWith('{')) {
+    try {
+      const o = JSON.parse(t) as { message?: string; error?: string; code?: string }
+      return {
+        message: String(o.message ?? o.error ?? raw),
+        code: String(o.code ?? ''),
+      }
+    } catch {
+      /* keep raw */
+    }
+  }
+  return { message: raw, code: '' }
+}
+
+function isSessionExpiredEdgeError(raw: string): boolean {
+  const parsed = parseEdgeFunctionErrorBody(raw)
+  const blob = `${parsed.code} ${parsed.message} ${raw}`.toLowerCase()
+  return (
+    parsed.code === 'UNAUTHORIZED_INVALID_TOKEN' ||
+    parsed.code === 'UNAUTHORIZED_NO_AUTH_HEADER' ||
+    blob.includes('invalid or expired token') ||
+    blob.includes('jwt expired') ||
+    blob.includes('token expired') ||
+    blob.includes('session expired')
+  )
+}
+
+export async function reloadPageIfSessionExpiredInvokeError(error: unknown, fallbackForParse: string): Promise<boolean> {
+  const raw = await getEdgeFunctionErrorMessage(error, fallbackForParse)
+  if (!isSessionExpiredEdgeError(raw)) return false
+  if (typeof window === 'undefined') return false
+  const prev = Number(window.sessionStorage.getItem(AUTH_RELOAD_GUARD_KEY) ?? '0')
+  const now = Date.now()
+  if (prev && now - prev < 5000) return false
+  window.sessionStorage.setItem(AUTH_RELOAD_GUARD_KEY, String(now))
+  try {
+    await supabase.auth.refreshSession()
+  } catch {
+    /* ignore */
+  }
+  window.location.reload()
+  return true
+}
+
 async function getAuthHeaders(): Promise<Record<string, string>>{
   const { data } = await supabase.auth.getSession()
   const token = data.session?.access_token
