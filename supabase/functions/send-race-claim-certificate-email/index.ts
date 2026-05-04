@@ -63,9 +63,18 @@ function certObjectPath(registrationId: string, bibNumber: string) {
 async function optimisePng(png: Uint8Array): Promise<Uint8Array> {
   // Lossless PNG compression before saving to Storage.
   // Falls back to original PNG if optimisation isn't available in this runtime.
+  // IMPORTANT: Edge CPU budgets are tight; keep this best-effort and fast.
   try {
     const { optimise } = await import('npm:@jsquash/oxipng@2.3.0')
-    const out = (await optimise(png.buffer, { level: 4 })) as ArrayBuffer
+    // Level 2 is a good tradeoff (levels >3 can be slow).
+    const optimiseWork = optimise(png.buffer, { level: 2 }) as unknown as Promise<ArrayBuffer>
+    const timeoutMs = 1200
+    const out = (await Promise.race([
+      optimiseWork,
+      new Promise<ArrayBuffer>((_resolve, reject) =>
+        setTimeout(() => reject(new Error(`oxipng timeout after ${timeoutMs}ms`)), timeoutMs),
+      ),
+    ])) as ArrayBuffer
     const bytes = new Uint8Array(out)
     console.log(`[png] oxipng: ${png.length} -> ${bytes.length} bytes`)
     return bytes.length > 0 ? bytes : png
