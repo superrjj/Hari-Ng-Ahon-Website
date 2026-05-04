@@ -528,13 +528,8 @@ export function RegistrationPaymentSuccess() {
         let skippedAlready = 0
         let mailUnavailable = false
 
+        // Ensure all visible bundle previews are uploaded before the email call.
         for (const regId of bundleIds) {
-          const dedupeKey = `cert-email-sent:${regId}`
-          if (window.localStorage.getItem(dedupeKey) === '1') {
-            skippedAlready++
-            continue
-          }
-
           const row = previewRows.find((r) => r.registrationId === regId)
           const url = row ? bundleCertificatePreviewUrls[row.registrationId] : null
           const bib = String(row?.data?.bibNumber ?? '').trim()
@@ -542,51 +537,65 @@ export function RegistrationPaymentSuccess() {
             try {
               await uploadCertificatePngToStorage(regId, url, bib)
             } catch {
-              // Email function will return 409 if the PNG isn't in storage yet.
+              /* function will report CERT_NOT_UPLOADED for missing files */
             }
-          }
-
-          const { data, error } = await supabase.functions.invoke('send-race-claim-certificate-email', {
-            headers: { Authorization: `Bearer ${token}` },
-            body: { registrationId: regId },
-          })
-          if (!active) return
-
-          if (error) {
-            if (await reloadPageIfSessionExpiredInvokeError(error, '')) {
-              await new Promise(() => {})
-            }
-            const raw = (error as { message?: string }).message ?? ''
-            if (raw.includes('CERT_NOT_UPLOADED') || raw.toLowerCase().includes('certificate image not found')) {
-              continue
-            }
-            if (raw.toLowerCase().includes('resend') || raw.includes('503')) {
-              mailUnavailable = true
-              break
-            }
-            continue
-          }
-
-          const payload = data as { ok?: boolean; skipped?: boolean; reason?: string; error?: string; detail?: string } | null
-          if (payload?.error) {
-            const detail = typeof payload.detail === 'string' ? payload.detail : ''
-            if (String(payload.error).includes('RESEND_API_KEY') || detail.includes('resend')) {
-              mailUnavailable = true
-              break
-            }
-            continue
-          }
-
-          if (payload?.skipped && payload?.reason === 'already_sent') {
-            window.localStorage.setItem(dedupeKey, '1')
-            skippedAlready++
-            continue
-          }
-          if (payload?.ok) {
-            window.localStorage.setItem(dedupeKey, '1')
-            sentCount++
           }
         }
+
+        const primaryId = bundleIds[0] ?? certificateData.registrationId
+        const { data, error } = await supabase.functions.invoke('send-race-claim-certificate-email', {
+          headers: { Authorization: `Bearer ${token}` },
+          body: { registrationId: primaryId, registrationIds: bundleIds },
+        })
+        if (!active) return
+
+        if (error) {
+          if (await reloadPageIfSessionExpiredInvokeError(error, '')) {
+            await new Promise(() => {})
+          }
+          const raw = (error as { message?: string }).message ?? ''
+          if (raw.toLowerCase().includes('resend') || raw.includes('503')) {
+            mailUnavailable = true
+          }
+          if (!mailUnavailable) {
+            setAutoEmailMessage('Could not send every certificate email yet (files may still be uploading). Use Refresh.')
+          }
+          if (mailUnavailable) {
+            setAutoEmailMessage(
+              'Certificate email is not available yet (mail not configured). You can download your certificate below.',
+            )
+          }
+          return
+        }
+
+        const payload = data as {
+          ok?: boolean
+          skipped?: boolean
+          reason?: string
+          error?: string
+          detail?: string
+          sent_registration_ids?: string[]
+          sent_count?: number
+        } | null
+        if (payload?.error) {
+          const detail = typeof payload.detail === 'string' ? payload.detail : ''
+          if (String(payload.error).includes('RESEND_API_KEY') || detail.includes('resend')) {
+            mailUnavailable = true
+          }
+          if (mailUnavailable) {
+            setAutoEmailMessage(
+              'Certificate email is not available yet (mail not configured). You can download your certificate below.',
+            )
+          }
+          return
+        }
+
+        const sentIds = Array.isArray(payload?.sent_registration_ids) ? payload!.sent_registration_ids : []
+        sentCount = Number(payload?.sent_count ?? sentIds.length ?? 0)
+        for (const rid of sentIds) {
+          window.localStorage.setItem(`cert-email-sent:${rid}`, '1')
+        }
+        skippedAlready = bundleIds.filter((id) => window.localStorage.getItem(`cert-email-sent:${id}`) === '1').length
 
         if (!active) return
 
@@ -600,11 +609,11 @@ export function RegistrationPaymentSuccess() {
         if (sentCount > 0) {
           if (sentCount < bundleIds.length) {
             setAutoEmailMessage(
-              `${sentCount} of ${bundleIds.length} certificate emails were sent. Tap Refresh / assign bib after each line has a bib, or open each “Other registrations” link — another send runs automatically.`,
+              `${sentCount} of ${bundleIds.length} certificates were attached and sent in one email. Tap Refresh / assign bib after each line has a bib.`,
             )
           } else if (bundleIds.length > 1) {
             setAutoEmailMessage(
-              `${sentCount} QR Code Race Claim Kit certificates were sent to your email (one email per registration line).`,
+              `${sentCount} QR Code Race Claim Kit certificates were sent to your email in one email.`,
             )
           } else {
             setAutoEmailMessage('Your QR Code Race Claim Kit certificate was sent to your email.')

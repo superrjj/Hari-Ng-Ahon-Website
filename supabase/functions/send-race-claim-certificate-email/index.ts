@@ -256,7 +256,7 @@ Deno.serve(async (req) => {
   }
   const userId = authData.user.id
 
-  let body: { registrationId?: string }
+  let body: { registrationId?: string; registrationIds?: string[] }
   try {
     body = await req.json()
   } catch {
@@ -304,108 +304,91 @@ Deno.serve(async (req) => {
   const recipient = String(registration.registrant_email ?? '').trim().toLowerCase()
   if (!recipient) return jsonResponse({ error: 'Registration has no email address.' }, 400)
 
-  const bibNumber = String(registration.bib_number ?? '').trim()
-  if (!bibNumber) return jsonResponse({ error: 'Bib number is not assigned yet. Refresh after payment finalizes.' }, 409)
+  const requestedIds = Array.isArray(body.registrationIds)
+    ? body.registrationIds.map((id) => String(id ?? '').trim()).filter(Boolean)
+    : []
+  const bundleRef = registration.checkout_bundle_id ? String(registration.checkout_bundle_id) : ''
+  const defaultIds = bundleRef
+    ? (
+        await supabaseAdmin
+          .from('registration_forms')
+          .select('id')
+          .eq('checkout_bundle_id', bundleRef)
+          .order('created_at', { ascending: true })
+      ).data?.map((r) => String(r.id)) ?? [registrationId]
+    : [registrationId]
+  const targetIds = (requestedIds.length > 0 ? requestedIds : defaultIds).filter(Boolean)
 
-  const { data: priorSent, error: priorErr } = await supabaseAdmin
+  const { data: targetRegs, error: targetRegsErr } = await supabaseAdmin
+    .from('registration_forms')
+    .select('id, bib_number, registrant_email, status, checkout_bundle_id')
+    .in('id', targetIds)
+    .order('created_at', { ascending: true })
+  if (targetRegsErr) return jsonResponse({ error: targetRegsErr.message }, 500)
+  if (!targetRegs?.length) return jsonResponse({ error: 'No registration rows found for this send request.' }, 404)
+
+  const { data: alreadySentRows, error: priorErr } = await supabaseAdmin
     .from('notification_deliveries')
-    .select('id')
-    .eq('registration_id', registrationId)
+    .select('registration_id')
+    .in('registration_id', targetRegs.map((r) => String(r.id)))
     .eq('channel', 'email')
     .eq('recipient', recipient)
     .eq('payload->>type', 'registration_certificate')
     .eq('status', 'sent')
-    .maybeSingle()
-
   if (priorErr) return jsonResponse({ error: priorErr.message }, 500)
-  if (priorSent?.id) {
-    return jsonResponse({ ok: true, skipped: true, reason: 'already_sent' }, 200)
-  }
+  const alreadySent = new Set((alreadySentRows ?? []).map((r) => String(r.registration_id)))
 
-  const [{ data: rider }, { data: event }, { data: raceCategory }, { data: order }] = await Promise.all([
-    supabaseAdmin
-      .from('registration_rider_details')
-      .select('first_name, last_name, age_category, discipline')
-      .eq('registration_id', registrationId)
-      .maybeSingle(),
-    supabaseAdmin.from('events').select('id, title, race_type').eq('id', registration.event_id).maybeSingle(),
-    registration.race_category_id
-      ? supabaseAdmin.from('race_categories').select('category_name, code').eq('id', registration.race_category_id).maybeSingle()
-      : Promise.resolve({ data: null }),
-    supabaseAdmin
-      .from('payment_orders')
-      .select('id, status, paid_at, created_at, provider_reference')
-      .eq('registration_id', registrationId)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-  ])
+  const attachments: Array<{ filename: string; content: string }> = []
+  const sentIds: string[] = []
+  const missingStorage: Array<{ registration_id: string; storage_path: string }> = []
+  const missingBib: string[] = []
+  const notPaid: string[] = []
 
-  let orderRow = order
-  const bundleRef = registration.checkout_bundle_id ? String(registration.checkout_bundle_id) : ''
-  if (!orderRow?.id && bundleRef) {
-    const r2 = await supabaseAdmin
-      .from('payment_orders')
-      .select('id, status, paid_at, created_at, provider_reference')
-      .eq('checkout_bundle_id', bundleRef)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-    orderRow = r2.data
-  }
-
-  const paymentStatus = String(orderRow?.status ?? registration.status ?? 'pending').toLowerCase()
-  const regStatus = String(registration.status ?? '').toLowerCase()
-  const isPaid = paymentStatus === 'paid' || paymentStatus === 'confirmed' || regStatus === 'confirmed'
-  if (!isPaid) return jsonResponse({ error: 'Payment is not confirmed for this registration.' }, 409)
-
-  const riderName = [rider?.first_name, rider?.last_name].filter(Boolean).join(' ').trim() || 'Registered Rider'
-  const category = String(rider?.age_category ?? raceCategory?.category_name ?? 'Open Category')
-  const discipline = String(rider?.discipline ?? event?.race_type ?? 'Cycling')
-  const entryLabel = String(registration.entry_event_type_label ?? '').trim()
-  const eventType = entryLabel || normalizeEventType(event?.race_type)
-  const eventTitle = String(event?.title ?? 'Hari ng Ahon')
-  const eventId = String(event?.id ?? registration.event_id ?? '')
-
-  const year = new Date().getFullYear()
-  const verificationId = `REG-${year}-${bibNumber.padStart(5, '0')}`
-  const qrPayload = `BIB:${bibNumber}|REG:${verificationId}|EVT:${eventId}`
-
-  const qrDataUrl = await QRCode.toDataURL(qrPayload, {
-    width: 192,
-    margin: 1,
-    color: { dark: '#111827', light: '#ffffff' },
-  })
-
-  const objectPath = certObjectPath(registrationId, bibNumber)
-
-  let pngBytes: Uint8Array | null = null
-  try {
-    const existing = await supabaseAdmin.storage.from(CERT_BUCKET).download(objectPath)
-    if (!existing.error && existing.data) {
-      pngBytes = new Uint8Array(await existing.data.arrayBuffer())
-      console.log('[certificate] using cached object', CERT_BUCKET, objectPath, `(${pngBytes.length} bytes)`)
+  for (const regRow of targetRegs) {
+    const rid = String(regRow.id)
+    if (alreadySent.has(rid)) continue
+    const regStatus = String(regRow.status ?? '').toLowerCase()
+    if (!['confirmed', 'paid'].includes(regStatus)) {
+      notPaid.push(rid)
+      continue
     }
-  } catch {
-    /* ignore */
+    const bibNumber = String(regRow.bib_number ?? '').trim()
+    if (!bibNumber) {
+      missingBib.push(rid)
+      continue
+    }
+    const objectPath = certObjectPath(rid, bibNumber)
+    const existing = await supabaseAdmin.storage.from(CERT_BUCKET).download(objectPath)
+    if (existing.error || !existing.data) {
+      missingStorage.push({ registration_id: rid, storage_path: objectPath })
+      continue
+    }
+    const pngBytes = new Uint8Array(await existing.data.arrayBuffer())
+    attachments.push({
+      filename: `race-claim-kit-${bibNumber.replace(/[^a-zA-Z0-9_-]/g, '')}.png`,
+      content: bytesToBase64(pngBytes),
+    })
+    sentIds.push(rid)
   }
 
-  // This function now expects the certificate PNG to be uploaded by the app (client-side)
-  // right after payment success. Server-side SVG rendering has proven unreliable in edge.
-  if (!pngBytes) {
+  if (attachments.length === 0) {
     return jsonResponse(
       {
-        error: 'Certificate image not found in storage yet.',
-        code: 'CERT_NOT_UPLOADED',
-        storage_bucket: CERT_BUCKET,
-        storage_path: objectPath,
+        error: 'No certificate attachments ready yet.',
+        code: missingStorage.length > 0 ? 'CERT_NOT_UPLOADED' : 'CERT_NOT_READY',
+        missing_storage: missingStorage,
+        missing_bib: missingBib,
+        not_paid: notPaid,
       },
       409,
     )
   }
 
-  const pngBase64 = bytesToBase64(pngBytes)
-  const emailSubject = `Your QR Code Race Claim Kit - ${eventTitle}`
+  const eventTitle = 'Hari ng Ahon'
+  const emailSubject =
+    attachments.length > 1
+      ? `Your QR Code Race Claim Kits - ${eventTitle}`
+      : `Your QR Code Race Claim Kit - ${eventTitle}`
 
   const resendRes = await fetch('https://api.resend.com/emails', {
     method: 'POST',
@@ -418,14 +401,8 @@ Deno.serve(async (req) => {
       to: [recipient],
       subject: emailSubject,
       html: `<p>Thank you for registering. Your payment is confirmed.</p>
-<p>Attached is your <strong>QR Code – Race Claim Kit</strong> certificate. Present this at kit claiming.</p>
-<p style="color:#64748b;font-size:13px;">Registration ID: ${escXml(verificationId)}</p>`,
-      attachments: [
-        {
-          filename: `race-claim-kit-${bibNumber.replace(/[^a-zA-Z0-9_-]/g, '')}.png`,
-          content: pngBase64,
-        },
-      ],
+<p>Attached ${attachments.length > 1 ? 'are your' : 'is your'} <strong>QR Code – Race Claim Kit</strong> certificate${attachments.length > 1 ? 's' : ''}. Present ${attachments.length > 1 ? 'them' : 'this'} at kit claiming.</p>`,
+      attachments,
     }),
   })
 
@@ -438,26 +415,28 @@ Deno.serve(async (req) => {
   console.log('[send-race-claim-certificate-email] Resend accepted for', registrationId, recipient)
 
   const now = new Date().toISOString()
-  const { error: insertErr } = await supabaseAdmin.from('notification_deliveries').insert({
+  const rows = sentIds.map((rid) => ({
     user_id: null,
-    registration_id: registrationId,
+    registration_id: rid,
     channel: 'email',
     recipient,
     subject: emailSubject,
     payload: {
       type: 'registration_certificate',
-      registration_id: registrationId,
-      verification_id: verificationId,
+      registration_id: rid,
       storage_bucket: CERT_BUCKET,
-      storage_path: objectPath,
+      storage_path: certObjectPath(rid, String((targetRegs.find((t) => String(t.id) === rid)?.bib_number ?? ''))),
+      bundle_email: sentIds.length > 1,
+      bundle_count: sentIds.length,
     },
     status: 'sent',
     created_at: now,
-  })
+  }))
+  const { error: insertErr } = await supabaseAdmin.from('notification_deliveries').insert(rows)
 
   if (insertErr) {
     console.error('notification_deliveries insert', insertErr)
   }
 
-  return jsonResponse({ ok: true, sent: true }, 200)
+  return jsonResponse({ ok: true, sent: true, sent_registration_ids: sentIds, sent_count: sentIds.length }, 200)
 })
