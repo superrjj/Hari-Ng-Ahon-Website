@@ -9,6 +9,7 @@ const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY') ?? ''
 const RESEND_FROM = Deno.env.get('RESEND_FROM') ?? ''
 
 const DEFAULT_PUBLIC_SITE_URL = 'https://www.alloutmultisports.com'
+const CERT_BUCKET = (Deno.env.get('CERT_BUCKET') ?? '').trim()
 
 const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
@@ -51,6 +52,27 @@ function bytesToBase64(bytes: Uint8Array): string {
     binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunk)) as unknown as number[])
   }
   return btoa(binary)
+}
+
+function certObjectPath(registrationId: string, bibNumber: string) {
+  const safeBib = String(bibNumber ?? '').replace(/[^a-zA-Z0-9_-]/g, '')
+  const safeReg = String(registrationId ?? '').replace(/[^a-zA-Z0-9_-]/g, '')
+  return `race-claim-kit/${safeReg || 'reg'}-${safeBib || 'bib'}.png`
+}
+
+async function optimisePng(png: Uint8Array): Promise<Uint8Array> {
+  // Lossless PNG compression before saving to Storage.
+  // Falls back to original PNG if optimisation isn't available in this runtime.
+  try {
+    const { optimise } = await import('npm:@jsquash/oxipng@2.3.0')
+    const out = (await optimise(png.buffer, { level: 4 })) as ArrayBuffer
+    const bytes = new Uint8Array(out)
+    console.log(`[png] oxipng: ${png.length} -> ${bytes.length} bytes`)
+    return bytes.length > 0 ? bytes : png
+  } catch (e) {
+    console.warn('[png] oxipng optimise failed; using original PNG', (e as Error)?.message ?? e)
+    return png
+  }
 }
 
 async function fetchDataUrl(assetPath: string): Promise<string | null> {
@@ -110,13 +132,14 @@ async function svgToPng(svg: string): Promise<Uint8Array> {
     font: {
       fontBuffers,
       loadSystemFonts: false,
-      // Ensure resvg picks Inter as the default family (some builds won't infer it from buffers).
-      defaultFontFamily: 'Inter',
-      sansSerifFamily: 'Inter',
-      serifFamily: 'Inter',
-      cursiveFamily: 'Inter',
-      fantasyFamily: 'Inter',
-      monospaceFamily: 'Inter',
+      // These TTFs are typically "Inter 18pt" family (Google Fonts static). If the family name
+      // doesn't match what's used in the SVG, resvg renders all <text> as blank when loadSystemFonts=false.
+      defaultFontFamily: 'Inter 18pt',
+      sansSerifFamily: 'Inter 18pt',
+      serifFamily: 'Inter 18pt',
+      cursiveFamily: 'Inter 18pt',
+      fantasyFamily: 'Inter 18pt',
+      monospaceFamily: 'Inter 18pt',
     },
   })
   return resvg.render().asPng()
@@ -165,7 +188,7 @@ function buildCertificateSvg(args: {
     return parts.join('\n')
   })()
 
-  const ff = 'Inter'
+  const ff = 'Inter 18pt'
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
   <rect width="${W}" height="${H}" fill="${bg}"/>
@@ -199,6 +222,11 @@ Deno.serve(async (req) => {
   if (req.method !== 'POST') return jsonResponse({ error: 'Method not allowed' }, 405)
 
   console.log('[send-race-claim-certificate-email] POST received')
+
+  if (!CERT_BUCKET) {
+    console.warn('[send-race-claim-certificate-email] missing CERT_BUCKET')
+    return jsonResponse({ error: 'CERT_BUCKET is not configured for this project.' }, 503)
+  }
 
   if (!RESEND_API_KEY.trim()) {
     console.warn('[send-race-claim-certificate-email] missing RESEND_API_KEY')
@@ -340,30 +368,56 @@ Deno.serve(async (req) => {
     color: { dark: '#111827', light: '#ffffff' },
   })
 
-  const [allOutLogoDataUrl, hnaLogoDataUrl] = await Promise.all([
-    fetchDataUrl('/all_out_multisports_1.png'),
-    fetchDataUrl('/hna-logo.png'),
-  ])
+  const objectPath = certObjectPath(registrationId, bibNumber)
 
-  const svg = buildCertificateSvg({
-    riderName,
-    eventTitle,
-    bibNumber,
-    category,
-    discipline,
-    eventType,
-    verificationId,
-    qrDataUrl,
-    allOutLogoDataUrl,
-    hnaLogoDataUrl,
-  })
-
-  let pngBytes: Uint8Array
+  let pngBytes: Uint8Array | null = null
   try {
-    pngBytes = await svgToPng(svg)
-  } catch (e) {
-    console.error('svgToPng failed', e)
-    return jsonResponse({ error: 'Failed to render certificate image.' }, 500)
+    const existing = await supabaseAdmin.storage.from(CERT_BUCKET).download(objectPath)
+    if (!existing.error && existing.data) {
+      pngBytes = new Uint8Array(await existing.data.arrayBuffer())
+      console.log('[certificate] using cached object', CERT_BUCKET, objectPath, `(${pngBytes.length} bytes)`)
+    }
+  } catch {
+    /* ignore */
+  }
+
+  if (!pngBytes) {
+    const [allOutLogoDataUrl, hnaLogoDataUrl] = await Promise.all([
+      fetchDataUrl('/all_out_multisports_1.png'),
+      fetchDataUrl('/hna-logo.png'),
+    ])
+
+    const svg = buildCertificateSvg({
+      riderName,
+      eventTitle,
+      bibNumber,
+      category,
+      discipline,
+      eventType,
+      verificationId,
+      qrDataUrl,
+      allOutLogoDataUrl,
+      hnaLogoDataUrl,
+    })
+
+    try {
+      const rawPng = await svgToPng(svg)
+      pngBytes = await optimisePng(rawPng)
+    } catch (e) {
+      console.error('svgToPng failed', e)
+      return jsonResponse({ error: 'Failed to render certificate image.' }, 500)
+    }
+
+    const uploadRes = await supabaseAdmin.storage.from(CERT_BUCKET).upload(objectPath, pngBytes, {
+      contentType: 'image/png',
+      upsert: true,
+      cacheControl: '31536000',
+    })
+    if (uploadRes.error) {
+      console.warn('[certificate] failed to upload; continuing to email inline', uploadRes.error.message)
+    } else {
+      console.log('[certificate] uploaded', CERT_BUCKET, objectPath, `(${pngBytes.length} bytes)`)
+    }
   }
 
   const pngBase64 = bytesToBase64(pngBytes)
@@ -410,6 +464,8 @@ Deno.serve(async (req) => {
       type: 'registration_certificate',
       registration_id: registrationId,
       verification_id: verificationId,
+      storage_bucket: CERT_BUCKET,
+      storage_path: objectPath,
     },
     status: 'sent',
     created_at: now,
