@@ -115,13 +115,13 @@ export function RegistrationPaymentSuccess() {
         22 +                // "QR CODE · RACE CLAIM KIT"
         24 +                // event title
         11 +                // "RIDER NAME" label
-        52 +                // rider name
+        40 +                // rider name (32px unified)
         36 +                // gap before bib box
         120 +               // bib box height
         32 +                // gap before meta
-        42 + 15 +           // CATEGORY label+value
-        52 +                // EVENT TYPE offset
-        42 + 15             // EVENT TYPE label+value
+        30 + 13 +           // CATEGORY label+value (unified 13px/24px)
+        62 +                // EVENT TYPE offset (increased for visibility)
+        30 + 13             // EVENT TYPE label+value (unified 13px/24px)
 
       const usableTop = 22
       const usableBottom = canvas.height - 22
@@ -157,12 +157,12 @@ export function RegistrationPaymentSuccess() {
 
       y += 24
       ctx.fillStyle = '#64748b'
-      ctx.font = '700 11px Arial'
+      ctx.font = '600 13px Arial'           // unified label font
       ctx.fillText('RIDER NAME', leftColX, y)
 
-      y += 52
+      y += 40
       ctx.fillStyle = '#111827'
-      ctx.font = '800 56px Arial'
+      ctx.font = '700 32px Arial'           // unified value font
       ctx.fillText(riderUpper, leftColX, y, eventMaxW)
 
       const drawLabelValue = (
@@ -170,18 +170,17 @@ export function RegistrationPaymentSuccess() {
         value: string,
         x: number,
         y: number,
-        valueFont = '700 36px Arial',
         maxWidth?: number,
       ) => {
         ctx.fillStyle = '#475569'
-        ctx.font = '700 15px Arial'
+        ctx.font = '600 13px Arial'         // unified label font
         ctx.fillText(label, x, y)
         ctx.fillStyle = '#0f172a'
-        ctx.font = valueFont
+        ctx.font = '700 24px Arial'         // unified value font
         if (typeof maxWidth === 'number') {
-          ctx.fillText(value, x, y + 42, maxWidth)
+          ctx.fillText(value, x, y + 30, maxWidth)
         } else {
-          ctx.fillText(value, x, y + 42)
+          ctx.fillText(value, x, y + 30)
         }
       }
 
@@ -201,9 +200,10 @@ export function RegistrationPaymentSuccess() {
       // REMOVED: category code label and value
 
       const metaY = bibBoxTop + 120 + 32
-      drawLabelValue('CATEGORY', certificateData.category, leftColX, metaY, '700 32px Arial', 420)
-      drawLabelValue('DISCIPLINE', certificateData.discipline, 540, metaY, '700 32px Arial', 220)
-      drawLabelValue('EVENT TYPE', certificateData.eventType, leftColX, metaY + 52, '700 28px Arial', 640)
+      drawLabelValue('CATEGORY', certificateData.category, leftColX, metaY, 420)
+      drawLabelValue('DISCIPLINE', certificateData.discipline, 540, metaY, 220)
+      drawLabelValue('EVENT TYPE', certificateData.eventType, leftColX, metaY + 62, 640)
+      //                                                                       ↑ increased from 52 to 62
 
       const qrSize = 192
       const qrCardWidth = Math.round(canvas.width * 0.4) - 48
@@ -485,7 +485,7 @@ export function RegistrationPaymentSuccess() {
               <p className="font-semibold">Log in to assign your race bib</p>
               <p className="mt-1 text-amber-900">
                 Payment can be confirmed in PayMongo before your bib is written. Finalizing requires the same account you
-                used to register (the Edge Function verifies your identity).
+                used to register.
               </p>
               <Link
                 to={`/auth?redirect=${encodeURIComponent(`/register/payment-success?registrationId=${encodeURIComponent(registrationId)}`)}`}
@@ -512,8 +512,27 @@ export function RegistrationPaymentSuccess() {
             </div>
           ) : null}
 
-          {loading ? <p className="mt-3 text-sm text-slate-600">Loading registration and payment details...</p> : null}
           {error ? <p className="mt-3 text-sm text-rose-600">{error}</p> : null}
+
+          {/* Shimmer skeleton — shown while data loads or QR preview is being generated */}
+          {(loading || (!certificateData && !error)) ? (
+            <div className="mt-4 space-y-3 animate-pulse">
+              <div className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 sm:grid-cols-2">
+                <div className="h-4 w-32 rounded bg-slate-200" />
+                <div className="h-4 w-24 rounded bg-slate-200" />
+                <div className="h-4 w-40 rounded bg-slate-200" />
+                <div className="h-4 w-28 rounded bg-slate-200" />
+                <div className="h-4 w-36 rounded bg-slate-200" />
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-white p-2">
+                <div
+                  className="aspect-video w-full rounded-md bg-gradient-to-r from-slate-200 via-slate-100 to-slate-200 bg-[length:200%_100%] animate-[cert-preview-shimmer_1.4s_ease-in-out_infinite]"
+                  aria-hidden
+                />
+              </div>
+            </div>
+          ) : null}
+
           {certificateData ? (
             <div className="mt-4 space-y-4">
               <div className="grid gap-2 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700 sm:grid-cols-2">

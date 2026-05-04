@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { supabase } from '../../lib/supabase'
 import {
   registrationService,
   type CheckoutItem,
@@ -401,6 +402,29 @@ export function RegistrationPayment() {
       return () => window.clearTimeout(timer)
     }
   }, [navigate, paymentState, registrationId])
+
+  // Guard: if this registrationId is already confirmed/paid, redirect to the success page
+  useEffect(() => {
+    if (!registrationId || paymentState) return
+    let cancelled = false
+    void supabase
+      .from('registration_forms')
+      .select('status')
+      .eq('id', registrationId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (cancelled) return
+        const status = String(data?.status ?? '').toLowerCase()
+        if (status === 'confirmed' || status === 'paid') {
+          void navigate(
+            `/register/payment-success?registrationId=${encodeURIComponent(registrationId)}`,
+            { replace: true },
+          )
+        }
+      })
+      .catch(() => { /* ignore — let user see the payment page */ })
+    return () => { cancelled = true }
+  }, [navigate, registrationId, paymentState])
 
   const handleCheckboxClick = () => {
     if (agreed) {

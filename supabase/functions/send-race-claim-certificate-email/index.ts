@@ -70,12 +70,43 @@ async function fetchDataUrl(assetPath: string): Promise<string | null> {
   }
 }
 
+let wasmInitialised = false
+
+async function fetchFontBuffer(url: string): Promise<Uint8Array | null> {
+  try {
+    const r = await fetch(url, { redirect: 'follow' })
+    if (!r.ok) return null
+    return new Uint8Array(await r.arrayBuffer())
+  } catch {
+    return null
+  }
+}
+
 async function svgToPng(svg: string): Promise<Uint8Array> {
   const { initWasm, Resvg } = await import('npm:@resvg/resvg-wasm@2.4.0')
-  const wasmResp = await fetch('https://unpkg.com/@resvg/resvg-wasm@2.4.0/index_bg.wasm')
-  await initWasm(wasmResp)
+  if (!wasmInitialised) {
+    const wasmResp = await fetch('https://unpkg.com/@resvg/resvg-wasm@2.4.0/index_bg.wasm')
+    await initWasm(wasmResp)
+    wasmInitialised = true
+  }
+
+  // Fetch Inter font variants from Google Fonts static CDN so resvg can render text.
+  // Without embedded fonts resvg renders all text as blank in the Deno edge runtime.
+  const fontUrls = [
+    'https://fonts.gstatic.com/s/inter/v13/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuLyfAZ9hiJ-Ek-_EeA.woff2',  // 400
+    'https://fonts.gstatic.com/s/inter/v13/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuGKYAZ9hiJ-Ek-_EeA.woff2',  // 700
+    'https://fonts.gstatic.com/s/inter/v13/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuDyYAZ9hiJ-Ek-_EeA.woff2',  // 800
+  ]
+  const fontBuffers = (await Promise.all(fontUrls.map(fetchFontBuffer))).filter(
+    (b): b is Uint8Array => b !== null,
+  )
+
   const resvg = new Resvg(svg, {
     fitTo: { mode: 'width', value: 1280 },
+    font: {
+      fontBuffers,
+      loadSystemFonts: false,
+    },
   })
   return resvg.render().asPng()
 }

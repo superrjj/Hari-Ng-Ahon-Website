@@ -55,10 +55,10 @@ export async function assignBibIfMissing(supabase: SupabaseClient, registrationI
       `Category limit reached for ${String(raceCategory?.category_name ?? categoryCode)}. Max riders: ${riderLimit}.`,
     )
   }
-  if (nextSequence > 999) {
-    throw new Error(`Category bib sequence exceeded 3 digits for category code ${categoryCode}.`)
+  if (nextSequence > 99) {
+    throw new Error(`Category bib sequence exceeded 2 digits for category code ${categoryCode}.`)
   }
-  const nextBib = `${categoryCode}${String(nextSequence).padStart(3, '0')}`
+  const nextBib = `${categoryCode}${String(nextSequence).padStart(2, '0')}`
 
   const { error: updateError } = await supabase
     .from('registration_forms')
