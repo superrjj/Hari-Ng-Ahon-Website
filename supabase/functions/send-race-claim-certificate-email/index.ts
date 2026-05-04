@@ -7,8 +7,7 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY') ?? ''
 const RESEND_FROM = Deno.env.get('RESEND_FROM') ?? ''
-// Production domain used as fallback when PUBLIC_SITE_URL env var is not set.
-// Override locally: add PUBLIC_SITE_URL=http://localhost:5173 to your .env / Supabase secrets.
+
 const DEFAULT_PUBLIC_SITE_URL = 'https://www.alloutmultisports.com'
 
 const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
@@ -72,16 +71,6 @@ async function fetchDataUrl(assetPath: string): Promise<string | null> {
 
 let wasmInitialised = false
 
-async function fetchFontBuffer(url: string): Promise<Uint8Array | null> {
-  try {
-    const r = await fetch(url, { redirect: 'follow' })
-    if (!r.ok) return null
-    return new Uint8Array(await r.arrayBuffer())
-  } catch {
-    return null
-  }
-}
-
 async function svgToPng(svg: string): Promise<Uint8Array> {
   const { initWasm, Resvg } = await import('npm:@resvg/resvg-wasm@2.4.0')
   if (!wasmInitialised) {
@@ -90,28 +79,35 @@ async function svgToPng(svg: string): Promise<Uint8Array> {
     wasmInitialised = true
   }
 
-  // Inter WOFF2 for resvg: without glyphs, all <text> renders blank (QR/images still show).
-  // jsDelivr is more reliable from Supabase Edge than fonts.gstatic.com in some regions.
-  const fontBase = 'https://cdn.jsdelivr.net/npm/@fontsource/inter@5.0.18/files'
-  const fontUrls = [
-    `${fontBase}/inter-latin-400-normal.woff2`,
-    `${fontBase}/inter-latin-700-normal.woff2`,
-    `${fontBase}/inter-latin-800-normal.woff2`,
-    `${fontBase}/inter-latin-900-normal.woff2`,
+  const fontFiles = [
+    'Inter_18pt-Regular.ttf',
+    'Inter_18pt-Black.ttf',
+    'Inter_18pt-Bold.ttf',
+    'Inter_18pt-ExtraBold.ttf',
   ]
-  const fontBuffers = (await Promise.all(fontUrls.map(fetchFontBuffer))).filter(
-    (b): b is Uint8Array => b !== null,
-  )
+  const fontBuffers = (
+    await Promise.all(
+      fontFiles.map(async (path) => {
+        const { data, error } = await supabaseAdmin.storage
+          .from('fonts')
+          .download(path)
+        if (error || !data) {
+          console.warn(`[svgToPng] failed to load font: ${path}`, error?.message)
+          return null
+        }
+        return new Uint8Array(await data.arrayBuffer())
+      })
+    )
+  ).filter((b): b is Uint8Array => b !== null)
+
+  console.log(`[svgToPng] font buffers loaded: ${fontBuffers.length}/4`)
   if (fontBuffers.length === 0) {
-    console.warn('[send-race-claim-certificate-email] svgToPng: no font buffers loaded; PNG text may be blank')
+    throw new Error('No fonts loaded — all text will be blank')
   }
 
   const resvg = new Resvg(svg, {
     fitTo: { mode: 'width', value: 1280 },
-    font: {
-      fontBuffers,
-      loadSystemFonts: false,
-    },
+    font: { fontBuffers, loadSystemFonts: false },
   })
   return resvg.render().asPng()
 }
@@ -159,14 +155,13 @@ function buildCertificateSvg(args: {
     return parts.join('\n')
   })()
 
-  // Use "Inter" only: svgToPng embeds Inter WOFF2 buffers; Arial has no glyphs in the Edge runtime → blank text.
   const ff = 'Inter'
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
   <rect width="${W}" height="${H}" fill="${bg}"/>
   <rect x="0" y="0" width="${W}" height="22" fill="${navy}"/>
   <rect x="0" y="${H - 22}" width="${W}" height="22" fill="${navy}"/>
-  <path d="M ${W - 100} 0 L ${W} 0 L ${W} 72 Z" fill="${gold}"/>
+  <path d="M ${W - 100} 0 L ${W} 0 L ${W} 72 Z" fill="${gold}"/>  
   <circle cx="470" cy="380" r="220" fill="#94A3B8" opacity="0.08"/>
   ${logoBlock}
   <text x="${leftX}" y="168" font-family="${ff}" font-size="11" font-weight="700" fill="#64748B" letter-spacing="0.15em">QR CODE - RACE CLAIM KIT</text>
@@ -395,7 +390,6 @@ Deno.serve(async (req) => {
   console.log('[send-race-claim-certificate-email] Resend accepted for', registrationId, recipient)
 
   const now = new Date().toISOString()
-  // Do not store auth JWT id in user_id when FK targets public.users — use null unless you mirror auth into users.
   const { error: insertErr } = await supabaseAdmin.from('notification_deliveries').insert({
     user_id: null,
     registration_id: registrationId,
