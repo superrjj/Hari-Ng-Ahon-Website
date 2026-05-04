@@ -107,7 +107,17 @@ async function svgToPng(svg: string): Promise<Uint8Array> {
 
   const resvg = new Resvg(svg, {
     fitTo: { mode: 'width', value: 1280 },
-    font: { fontBuffers, loadSystemFonts: false },
+    font: {
+      fontBuffers,
+      loadSystemFonts: false,
+      // Ensure resvg picks Inter as the default family (some builds won't infer it from buffers).
+      defaultFontFamily: 'Inter',
+      sansSerifFamily: 'Inter',
+      serifFamily: 'Inter',
+      cursiveFamily: 'Inter',
+      fantasyFamily: 'Inter',
+      monospaceFamily: 'Inter',
+    },
   })
   return resvg.render().asPng()
 }
