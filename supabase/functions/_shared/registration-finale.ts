@@ -1,3 +1,4 @@
+// @ts-nocheck
 // Shared PayMongo-paid finalization helpers (bundles + bib assignment).
 
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2'
@@ -43,7 +44,7 @@ export async function assignBibIfMissing(supabase: SupabaseClient, registrationI
     .limit(5000)
   if (bibError) throw bibError
 
-  const maxSequence = (existingBibs ?? []).reduce((max, row) => {
+  const maxSequence = (existingBibs ?? []).reduce((max: number, row: { bib_number: string }) => {
     const seq = extractBibSequenceByPrefix(row.bib_number, categoryCode)
     return seq > max ? seq : max
   }, 0)
@@ -54,10 +55,10 @@ export async function assignBibIfMissing(supabase: SupabaseClient, registrationI
       `Category limit reached for ${String(raceCategory?.category_name ?? categoryCode)}. Max riders: ${riderLimit}.`,
     )
   }
-  if (nextSequence > 99) {
-    throw new Error(`Category bib sequence exceeded 2 digits for category code ${categoryCode}.`)
+  if (nextSequence > 999) {
+    throw new Error(`Category bib sequence exceeded 3 digits for category code ${categoryCode}.`)
   }
-  const nextBib = `${categoryCode}${String(nextSequence).padStart(2, '0')}`
+  const nextBib = `${categoryCode}${String(nextSequence).padStart(3, '0')}`
 
   const { error: updateError } = await supabase
     .from('registration_forms')
@@ -116,8 +117,18 @@ export async function finalizeBundleSiblingsPaid(supabase: SupabaseClient, prima
     .eq('user_id', userId)
   if (listErr) throw listErr
 
+  const bibErrors: string[] = []
   for (const row of bundleRows ?? []) {
     if (!row?.id) continue
-    await assignBibIfMissing(supabase, row.id)
+    try {
+      await assignBibIfMissing(supabase, row.id)
+    } catch (e) {
+      // Collect per-row errors so one failure doesn't block the rest of the bundle.
+      bibErrors.push(`[${row.id}] ${(e as Error).message}`)
+      console.error('[finalizeBundleSiblingsPaid] assignBibIfMissing failed for', row.id, e)
+    }
+  }
+  if (bibErrors.length > 0) {
+    throw new Error(`Bib assignment failed for some registrations: ${bibErrors.join('; ')}`)
   }
 }

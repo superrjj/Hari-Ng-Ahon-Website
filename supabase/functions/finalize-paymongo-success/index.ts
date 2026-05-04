@@ -45,7 +45,7 @@ Deno.serve(async (req) => {
 
   const { data: registration, error: regLookupError } = await supabase
     .from('registration_forms')
-    .select('id, user_id, race_category_id, bib_number')
+    .select('id, user_id, race_category_id, bib_number, checkout_bundle_id')
     .eq('id', registrationId)
     .maybeSingle()
 
@@ -57,15 +57,44 @@ Deno.serve(async (req) => {
 
   const now = new Date().toISOString()
 
-  const { data: order, error: orderLookupError } = await supabase
+  let { data: order, error: orderLookupError } = await supabase
     .from('payment_orders')
-    .select('id, status, amount, currency, provider_reference')
+    .select('id, status, amount, currency, provider_reference, registration_id, checkout_bundle_id')
     .eq('registration_id', registrationId)
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()
 
   if (orderLookupError) return jsonResponse({ error: orderLookupError.message }, 500)
+
+  // Bundle checkouts attach the PayMongo order to the primary row only; siblings share checkout_bundle_id.
+  if (!order?.id && registration.checkout_bundle_id) {
+    const bundle = String(registration.checkout_bundle_id).trim()
+    const { data: bundleOrder, error: bundleOrderErr } = await supabase
+      .from('payment_orders')
+      .select('id, status, amount, currency, provider_reference, registration_id, checkout_bundle_id')
+      .eq('checkout_bundle_id', bundle)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (bundleOrderErr) return jsonResponse({ error: bundleOrderErr.message }, 500)
+    if (bundleOrder?.id) {
+      const { data: orderOwner, error: ownerErr } = await supabase
+        .from('registration_forms')
+        .select('id, user_id, checkout_bundle_id')
+        .eq('id', bundleOrder.registration_id)
+        .maybeSingle()
+      if (ownerErr) return jsonResponse({ error: ownerErr.message }, 500)
+      if (
+        orderOwner?.id &&
+        String(orderOwner.user_id) === userId &&
+        String(orderOwner.checkout_bundle_id ?? '').trim() === bundle
+      ) {
+        order = bundleOrder
+      }
+    }
+  }
+
   if (!order?.id) return jsonResponse({ error: 'Payment order not found for registration.' }, 404)
 
   if (String(order.status).toLowerCase() !== 'paid') {
@@ -105,15 +134,19 @@ Deno.serve(async (req) => {
     .eq('id', registrationId)
   if (registrationUpdateError) return jsonResponse({ error: registrationUpdateError.message }, 500)
 
+  let bibWarning: string | null = null
   try {
     await assignBibIfMissing(supabase, registrationId)
     await finalizeBundleSiblingsPaid(supabase, registrationId)
   } catch (e) {
-    return jsonResponse({ error: (e as Error).message }, 500)
+    // Bib assignment is best-effort — payment is already confirmed, so we log
+    // the error but do NOT return 500. The client can retry via "Refresh / assign bib".
+    bibWarning = (e as Error).message
+    console.error('[finalize-paymongo-success] bib assignment warning:', bibWarning)
   }
 
   const { data: bibRow } = await supabase.from('registration_forms').select('bib_number').eq('id', registrationId).maybeSingle()
 
   const bibNumber = String(bibRow?.bib_number ?? '').trim()
-  return jsonResponse({ ok: true, bib_number: bibNumber }, 200)
+  return jsonResponse({ ok: true, bib_number: bibNumber, ...(bibWarning ? { bib_warning: bibWarning } : {}) }, 200)
 })

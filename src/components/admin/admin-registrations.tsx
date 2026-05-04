@@ -133,7 +133,7 @@ export function AdminRegistrations() {
     const counts = new Map<string, number>()
     for (const r of filtered) {
       if (String(r.payment_status ?? '').toLowerCase() === 'paid') continue
-      const key = `${String(r.registrant_email ?? '').toLowerCase()}|${String(r.event_title ?? '')}|${String(r.race_category_id ?? r.age_category ?? '')}`
+      const key = `${String(r.registrant_email ?? '').toLowerCase()}|${String(r.event_title ?? '')}|${String(r.race_category_id ?? r.age_category ?? '')}|${String(r.entry_event_type_label ?? '').toLowerCase()}`
       counts.set(key, (counts.get(key) ?? 0) + 1)
     }
     const dups = new Set<string>()
@@ -290,7 +290,7 @@ export function AdminRegistrations() {
                 paginated.map((r) => {
                   const payment = String(r.payment_status ?? 'unknown')
                   const isPaid = payment.toLowerCase() === 'paid'
-                  const dupKey = `${String(r.registrant_email ?? '').toLowerCase()}|${String(r.event_title ?? '')}|${String(r.race_category_id ?? r.age_category ?? '')}`
+                  const dupKey = `${String(r.registrant_email ?? '').toLowerCase()}|${String(r.event_title ?? '')}|${String(r.race_category_id ?? r.age_category ?? '')}|${String(r.entry_event_type_label ?? '').toLowerCase()}`
                   const showDupWarning = !isPaid && duplicateNonPaidKeys.has(dupKey)
                   const referenceNo = (r.provider_reference ?? '').trim()
                   return (
@@ -299,7 +299,12 @@ export function AdminRegistrations() {
                         <p className="text-xs font-semibold">{r.rider_full_name ?? '-'}</p>
                         <p className="text-[11px] text-slate-500">{r.registrant_email ?? '-'}</p>
                       </td>
-                      <td className="py-3 pr-3 text-xs">{r.event_title ?? r.race_type ?? '-'}</td>
+                      <td className="py-3 pr-3 text-xs">
+                        <p className="font-medium text-slate-900">{r.event_title ?? r.race_type ?? '-'}</p>
+                        {r.entry_event_type_label ? (
+                          <p className="mt-0.5 text-[10px] text-slate-500">{r.entry_event_type_label}</p>
+                        ) : null}
+                      </td>
                       <td className="py-3 pr-3 text-xs">{r.age_category ?? '-'}</td>
                       <td className="py-3 pr-3 text-xs">{r.discipline ?? '-'}</td>
                       <td className="py-3 pr-3 text-xs">{r.team_name ?? '-'}</td>

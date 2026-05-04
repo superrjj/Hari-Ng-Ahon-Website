@@ -311,7 +311,10 @@ export function RegistrationPaymentSuccess() {
 
       setNeedsLoginToFinalize(false)
       try {
-        await registrationService.markRegistrationAsPaidAfterPaymongoRedirect(registrationId)
+        const bundleIds = await registrationService.listCheckoutBundleRegistrationIds(registrationId)
+        for (const regId of bundleIds) {
+          await registrationService.markRegistrationAsPaidAfterPaymongoRedirect(regId)
+        }
       } catch (e) {
         if (mounted) {
           setError((e as Error).message || 'Failed to sync payment status.')
@@ -348,7 +351,10 @@ export function RegistrationPaymentSuccess() {
     try {
       if (registrationId && session?.access_token) {
         try {
-          await registrationService.markRegistrationAsPaidAfterPaymongoRedirect(registrationId)
+          const bundleIds = await registrationService.listCheckoutBundleRegistrationIds(registrationId)
+          for (const regId of bundleIds) {
+            await registrationService.markRegistrationAsPaidAfterPaymongoRedirect(regId)
+          }
         } catch (e) {
           setError((e as Error).message || 'Failed to finalize payment.')
         }

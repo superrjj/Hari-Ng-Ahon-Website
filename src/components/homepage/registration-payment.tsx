@@ -5,6 +5,7 @@ import {
   type CheckoutItem,
   clearRegistrationCheckoutPayload,
   loadRegistrationCheckoutPayload,
+  resolveCheckoutLines,
   type RegistrationCheckoutPayload,
 } from '../../services/registrationService'
 
@@ -324,7 +325,8 @@ export function RegistrationPayment() {
   const activeRegistrationId = registrationId
 
   const checkoutLineCount =
-    checkoutItem?.lineItemCount ?? Math.max(checkoutPayload?.eventEntries?.length ?? 1, 1)
+    checkoutItem?.lineItemCount ??
+    Math.max(resolveCheckoutLines(checkoutPayload).length, checkoutPayload?.eventEntries?.length ?? 1, 1)
 
   const checkoutAmount = useMemo(() => {
     const itemAmt = checkoutItem?.amount
@@ -335,7 +337,7 @@ export function RegistrationPayment() {
     const total = Number(p.registrationFeeTotal)
     if (Number.isFinite(total) && total > 0) return total
     const per = Number(p.registrationFeePerEntry)
-    const n = Math.max(p.eventEntries?.length ?? 1, 1)
+    const n = Math.max(resolveCheckoutLines(p).length, p.eventEntries?.length ?? 1, 1)
     if (Number.isFinite(per) && per > 0) return per * n
     return 1
   }, [checkoutItem, checkoutPayload])
@@ -437,11 +439,11 @@ export function RegistrationPayment() {
       if (!regId) {
         const normalized = loadRegistrationCheckoutPayload() ?? checkoutPayload ?? payloadHydrated
         if (!normalized) throw new Error('Checkout session expired.')
-        const entries =
-          normalized.eventEntries?.length > 0
-            ? normalized.eventEntries
-            : [{ slug: '', label: String(normalized.raceType ?? 'Event') }]
-        const n = Math.max(entries.length, 1)
+        const lines = resolveCheckoutLines(normalized)
+        if (lines.length === 0) {
+          throw new Error('Checkout has no registration lines. Return to the form and select event type(s) and category(ies).')
+        }
+        const n = lines.length
         let perEntry = Number(normalized.registrationFeePerEntry)
         if (!(perEntry > 0)) perEntry = n > 0 ? Number(normalized.registrationFeeTotal) / n : 1
         if (!(perEntry > 0)) perEntry = 1
@@ -450,23 +452,25 @@ export function RegistrationPayment() {
 
         let primaryId = ''
         const bundleId = normalized.checkoutBundleId
-        for (const entry of entries) {
-          const slugRaw = entry.slug?.trim()
+        for (const line of lines) {
+          const slugRaw = line.slug?.trim()
           const slug = slugRaw ? slugRaw : null
           const label =
-            entry.label?.trim() ||
+            line.label?.trim() ||
             String(normalized.raceType ?? normalized.raceTypeLabel ?? '').trim() ||
             'Event'
+          const ageCategoryForLine =
+            String(line.categoryName ?? '').trim() || String(normalized.rider.ageCategory ?? '').trim() || ''
           const { registrationId: newId } = await registrationService.createRegistration({
             raceType: label,
             eventId: normalized.eventId,
-            raceCategoryId: normalized.raceCategoryId,
+            raceCategoryId: line.raceCategoryId,
             registrantEmail: normalized.registrantEmail,
             registrationFee: perEntry,
             checkoutBundleId: bundleId,
             entryEventTypeSlug: slug,
             entryEventTypeLabel: label,
-            rider: normalized.rider,
+            rider: { ...normalized.rider, ageCategory: ageCategoryForLine },
           })
           if (!primaryId) primaryId = newId
         }

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { api } from '../../services/api'
 import { supabase } from '../../lib/supabase'
-import { saveRegistrationCheckoutPayload } from '../../services/registrationService'
+import { saveRegistrationCheckoutPayload, type RegistrationCheckoutLine } from '../../services/registrationService'
 import type { Event } from '../../types'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -134,7 +134,7 @@ export function RegistrationForm() {
     teamName: '',
     discipline: '',
   })
-  const [categoryId, setCategoryId] = useState('')
+  const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([])
   const [shirtSize, setShirtSize] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -239,11 +239,11 @@ export function RegistrationForm() {
     )
   }
 
-  // ── Computed total fee ─────────────────────────────────────────────────────
-  const totalFee = useMemo(
-    () => registrationFee * Math.max(1, selectedEventTypeSlugs.length),
-    [registrationFee, selectedEventTypeSlugs.length],
-  )
+  const toggleCategory = (raceCategoryId: string) => {
+    setSelectedCategoryIds((prev) =>
+      prev.includes(raceCategoryId) ? prev.filter((id) => id !== raceCategoryId) : [...prev, raceCategoryId],
+    )
+  }
 
   // ── Race Categories from DB ────────────────────────────────────────────────
   const [disciplineGroups, setDisciplineGroups] = useState<DisciplineGroup[]>([])
@@ -256,7 +256,7 @@ export function RegistrationForm() {
         if (!active) return
         setDisciplineGroups([])
         setForm((p) => ({ ...p, discipline: '' }))
-        setCategoryId('')
+        setSelectedCategoryIds([])
         return
       }
       if (!active) return
@@ -288,7 +288,7 @@ export function RegistrationForm() {
         // Auto-select first discipline
         const firstDisc = groups[0]?.discipline ?? ''
         setForm((p) => ({ ...p, discipline: firstDisc }))
-        setCategoryId('')
+        setSelectedCategoryIds([])
       } finally {
         if (active) {
           setCategoriesLoading(false)
@@ -305,22 +305,35 @@ export function RegistrationForm() {
     [disciplineGroups, form.discipline],
   )
 
+  const selectedCategoryIdsInDiscipline = useMemo(() => {
+    const allowed = new Set((currentDisciplineGroup?.categories ?? []).map((c) => c.id))
+    return selectedCategoryIds.filter((id) => allowed.has(id))
+  }, [currentDisciplineGroup, selectedCategoryIds])
+
+  const totalFee = useMemo(
+    () =>
+      registrationFee *
+      Math.max(1, selectedEventTypeSlugs.length) *
+      Math.max(1, selectedCategoryIdsInDiscipline.length),
+    [registrationFee, selectedEventTypeSlugs.length, selectedCategoryIdsInDiscipline.length],
+  )
+
   const currentCategoryNames = useMemo(
     () => (currentDisciplineGroup?.categories ?? []).map((c) => c.category_name),
     [currentDisciplineGroup],
   )
-  const currentCategoryIds = useMemo(
-    () => (currentDisciplineGroup?.categories ?? []).map((c) => c.id),
-    [currentDisciplineGroup],
-  )
-  const validCategoryId = useMemo(
-    () => (categoryId && currentCategoryIds.includes(categoryId) ? categoryId : ''),
-    [categoryId, currentCategoryIds],
-  )
-  const selectedCategory = useMemo(
-    () => (currentDisciplineGroup?.categories ?? []).find((c) => c.id === validCategoryId) ?? null,
-    [currentDisciplineGroup, validCategoryId],
-  )
+  const selectedCategoryLabels = useMemo(() => {
+    const cats = currentDisciplineGroup?.categories ?? []
+    return selectedCategoryIdsInDiscipline
+      .map((id) => cats.find((c) => c.id === id)?.category_name)
+      .filter(Boolean) as string[]
+  }, [currentDisciplineGroup, selectedCategoryIdsInDiscipline])
+
+  const primaryCategoryForRider = useMemo(() => {
+    const cats = currentDisciplineGroup?.categories ?? []
+    const firstId = selectedCategoryIdsInDiscipline[0]
+    return firstId ? cats.find((c) => c.id === firstId) ?? null : null
+  }, [currentDisciplineGroup, selectedCategoryIdsInDiscipline])
 
   // Does this discipline have age-graded categories (Youth / Junior / Masters)?
   const hasAgeCategories = useMemo(
@@ -352,7 +365,7 @@ export function RegistrationForm() {
     if (!form.contactNumber) errors.contactNumber = 'Contact number is required.'
     if (!form.emergencyContactName) errors.emergencyContactName = 'Emergency contact name is required.'
     if (!form.emergencyContactNumber) errors.emergencyContactNumber = 'Emergency contact number is required.'
-    if (!validCategoryId) errors.category = 'Please select a category.'
+    if (selectedCategoryIdsInDiscipline.length === 0) errors.category = 'Please select at least one category.'
     if (!shirtSize) errors.shirtSize = 'Please select a shirt size.'
     if (!selectedEvent) errors.event = 'Please select an event.'
     if (selectedEventTypeSlugs.length === 0) errors.eventTypes = 'Please select at least one event type.'
@@ -371,14 +384,28 @@ export function RegistrationForm() {
       const raceTypeLabel = eventEntries.map((e) => e.label).join(', ')
       const checkoutBundleId = globalThis.crypto?.randomUUID?.() ?? `bundle-${Date.now()}`
 
+      const cats = currentDisciplineGroup?.categories ?? []
+      const checkoutLines: RegistrationCheckoutLine[] = selectedEventTypeSlugs.flatMap((slug) =>
+        selectedCategoryIdsInDiscipline.map((raceCategoryId) => {
+          const cat = cats.find((c) => c.id === raceCategoryId)
+          return {
+            slug,
+            label: eventTypes.find((t) => t.slug === slug)?.name ?? formatSlug(slug),
+            raceCategoryId,
+            categoryName: cat?.category_name,
+          }
+        }),
+      )
+
       saveRegistrationCheckoutPayload({
         raceType: raceTypeLabel || (selectedEvent!.race_type ?? ''),
         eventId: selectedEvent!.id,
-        raceCategoryId: validCategoryId,
+        raceCategoryId: selectedCategoryIdsInDiscipline[0] ?? '',
         registrationFeePerEntry: registrationFee,
         registrationFeeTotal: totalFee,
         checkoutBundleId,
         eventEntries,
+        checkoutLines,
         registrantEmail: form.email,
         eventTitle: selectedEvent?.title ?? '',
         raceTypeLabel: selectedEvent?.race_type ?? '',
@@ -394,7 +421,7 @@ export function RegistrationForm() {
           emergencyContactNumber: form.emergencyContactNumber,
           teamName: form.teamName,
           discipline: form.discipline,
-          ageCategory: selectedCategory?.category_name ?? '',
+          ageCategory: primaryCategoryForRider?.category_name ?? '',
           jerseySize: shirtSize,
         },
       })
@@ -475,8 +502,8 @@ export function RegistrationForm() {
                       aria-checked={checked}
                       onClick={() => toggleEventType(et.slug)}
                       className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${checked
-                          ? 'border-[#cfae3f] bg-[#fff6d6] text-slate-900'
-                          : 'border-slate-300 bg-white text-slate-700 hover:border-[#cfae3f]'
+                        ? 'border-[#cfae3f] bg-[#fff6d6] text-slate-900'
+                        : 'border-slate-300 bg-white text-slate-700 hover:border-[#cfae3f]'
                         }`}
                     >
                       <span
@@ -498,11 +525,12 @@ export function RegistrationForm() {
           </div>
 
           {/* Dynamic fee preview */}
-          {selectedEventTypeSlugs.length > 0 && (
+          {selectedEventTypeSlugs.length > 0 && selectedCategoryIdsInDiscipline.length > 0 && (
             <div className="rounded-lg border border-[#cfae3f]/40 bg-[#fff6d6] px-4 py-3">
               <p className="text-xs text-slate-600">
-                {selectedEventTypeSlugs.length} event type{selectedEventTypeSlugs.length > 1 ? 's' : ''} selected
-                &nbsp;×&nbsp;₱{registrationFee.toLocaleString()}
+                {selectedEventTypeSlugs.length} type{selectedEventTypeSlugs.length > 1 ? 's' : ''} ×{' '}
+                {selectedCategoryIdsInDiscipline.length} categor
+                {selectedCategoryIdsInDiscipline.length > 1 ? 'ies' : 'y'} × ₱{registrationFee.toLocaleString()}
               </p>
               <p className="mt-0.5 text-base font-semibold text-slate-900">
                 Total: ₱{totalFee.toLocaleString()}
@@ -598,7 +626,7 @@ export function RegistrationForm() {
           </div>
 
           {categoriesLoading ? (
-             <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-4 md:grid-cols-2">
               {Array.from({ length: 1 }).map((_, i) => (
                 <div key={i} className="animate-pulse rounded-lg border border-slate-200 bg-white p-4">
                   <div className="h-4 w-32 rounded bg-slate-200 mb-2" />
@@ -614,48 +642,98 @@ export function RegistrationForm() {
           ) : disciplineGroups.length === 0 ? (
             <p className="text-xs text-rose-600">No categories configured for this event.</p>
           ) : (
-            <div className="grid gap-4 md:grid-cols-2">
-              {/* Discipline selector */}
-              <div className="space-y-2">
-                <label className="text-sm font-semibold text-slate-900">
-                  Discipline <span className="text-rose-500">*</span>
-                </label>
-                <select
-                  value={form.discipline}
-                  onChange={(e) => {
-                    setForm((p) => ({ ...p, discipline: e.target.value }))
-                    setCategoryId('')
-                  }}
-                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-[#cfae3f]"
-                >
-                  {disciplineGroups.map((g) => (
-                    <option key={g.discipline} value={g.discipline}>
-                      {g.discipline}
-                    </option>
-                  ))}
-                </select>
-              </div>
+            <div className="space-y-4">
+              {/* ── Discipline tab-pills ─────────────────────────────────── */}
+              {disciplineGroups.length > 1 && (
+                <div className="space-y-1.5">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Discipline</p>
+                  <div className="flex flex-wrap gap-2">
+                    {disciplineGroups.map((g) => {
+                      const active = form.discipline === g.discipline
+                      return (
+                        <button
+                          key={g.discipline}
+                          type="button"
+                          onClick={() => {
+                            setForm((p) => ({ ...p, discipline: g.discipline }))
+                            const nextGroup = disciplineGroups.find((d) => d.discipline === g.discipline)
+                            const allowed = new Set((nextGroup?.categories ?? []).map((c) => c.id))
+                            setSelectedCategoryIds((prev) => prev.filter((id) => allowed.has(id)))
+                          }}
+                          className={`inline-flex items-center gap-1.5 rounded-full border px-4 py-1.5 text-sm font-semibold transition-all ${active
+                              ? 'border-[#cfae3f] bg-[#cfae3f] text-black shadow-sm'
+                              : 'border-slate-300 bg-white text-slate-600 hover:border-[#cfae3f] hover:text-slate-900'
+                            }`}
+                        >
+                          {active && (
+                            <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 12 12" fill="none">
+                              <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                          )}
+                          {g.discipline}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
 
-              {/* Category selector */}
-              <div className="space-y-2">
-                <label className="text-sm font-semibold text-slate-900">
-                  Age / Class Category <span className="text-rose-500">*</span>
-                </label>
-                <select
-                  value={validCategoryId}
-                  onChange={(e) => setCategoryId(e.target.value)}
-                  className={`w-full rounded-md border bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-[#cfae3f] ${fieldErrors.category ? 'border-rose-400' : 'border-slate-300'
+              {/* Single discipline: show name as static label */}
+              {disciplineGroups.length === 1 && (
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex items-center rounded-full border border-[#cfae3f] bg-[#fff6d6] px-3 py-1 text-sm font-semibold text-slate-800">
+                    {disciplineGroups[0].discipline}
+                  </span>
+                </div>
+              )}
+
+              {/* ── Category grid ────────────────────────────────────────── */}
+              <div className="space-y-1.5">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Age / Class Category <span className="text-rose-500 normal-case font-normal tracking-normal">*</span>
+                </p>
+                <div
+                  className={`grid grid-cols-1 gap-2 sm:grid-cols-2 rounded-xl border p-3 ${fieldErrors.category ? 'border-rose-400 bg-rose-50/40' : 'border-slate-200 bg-slate-50/60'
                     }`}
                 >
-                  <option value="" disabled>
-                    Select category
-                  </option>
-                  {currentDisciplineGroup?.categories.map((cat) => (
-                    <option key={cat.id} value={cat.id}>
-                      {cat.category_name}
-                    </option>
-                  ))}
-                </select>
+                  {currentDisciplineGroup?.categories.map((cat) => {
+                    const checked = selectedCategoryIds.includes(cat.id)
+                    return (
+                      <button
+                        key={cat.id}
+                        type="button"
+                        role="checkbox"
+                        aria-checked={checked}
+                        onClick={() => toggleCategory(cat.id)}
+                        className={`group relative flex items-center gap-3 rounded-lg border px-4 py-3 text-left text-sm font-medium transition-all ${checked
+                            ? 'border-[#cfae3f] bg-[#fff6d6] text-slate-900 shadow-sm'
+                            : 'border-slate-200 bg-white text-slate-600 hover:border-[#cfae3f]/60 hover:bg-[#fffdf0] hover:text-slate-900'
+                          }`}
+                      >
+                        {/* Custom checkbox */}
+                        <span
+                          aria-hidden="true"
+                          className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 transition-all ${checked
+                              ? 'border-[#cfae3f] bg-[#cfae3f]'
+                              : 'border-slate-300 bg-white group-hover:border-[#cfae3f]/70'
+                            }`}
+                        >
+                          {checked && (
+                            <svg className="h-3 w-3 text-black" viewBox="0 0 12 12" fill="none">
+                              <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                          )}
+                        </span>
+                        <span className="flex-1 leading-snug">{cat.category_name}</span>
+                        {checked && (
+                          <span className="shrink-0 rounded-full bg-[#cfae3f]/20 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#8a6d00]">
+                            Selected
+                          </span>
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
                 {fieldErrors.category && (
                   <p className="text-xs text-rose-500">{fieldErrors.category}</p>
                 )}
@@ -665,38 +743,49 @@ export function RegistrationForm() {
 
           {/* Age-based category suggestion — only shown for age-graded disciplines */}
           {hasAgeCategories && form.birthDate && suggestedAgeCategory && (
-            <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm">
-              <p className="text-xs text-slate-600">
-                Based on your date of birth, your race age on Dec 31, {new Date().getFullYear()} is{' '}
-                <span className="font-semibold text-slate-900">{raceAge}</span>.
-              </p>
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-                <p className="text-xs text-slate-700">
+            <div className="flex flex-col gap-2 rounded-xl border border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50 px-4 py-3.5">
+              <div className="flex items-start gap-2.5">
+                <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-700 text-xs font-bold">
+                  ℹ
+                </span>
+                <div className="text-xs text-slate-700 leading-relaxed">
+                  Based on your date of birth, your race age on Dec 31, {new Date().getFullYear()} is{' '}
+                  <span className="font-bold text-slate-900">{raceAge}</span>.{' '}
                   Suggested category:{' '}
-                  <span className="font-semibold text-slate-900">{suggestedAgeCategory}</span>
-                </p>
-                {selectedCategory?.category_name !== suggestedAgeCategory && (
+                  <span className="font-bold text-blue-800">{suggestedAgeCategory}</span>
+                </div>
+              </div>
+              <div className="pl-8">
+                {!selectedCategoryLabels.includes(suggestedAgeCategory) ? (
                   <button
                     type="button"
                     onClick={() => {
                       const match = (currentDisciplineGroup?.categories ?? []).find((cat) => cat.category_name === suggestedAgeCategory)
-                      if (match) setCategoryId(match.id)
+                      if (match) setSelectedCategoryIds([match.id])
                     }}
-                    className="rounded-md bg-[#1e4a8e] px-3 py-1 text-xs font-semibold text-white hover:bg-[#163b72] transition"
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-blue-700 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-blue-800 transition"
                   >
-                    Use this category
+                    <svg className="h-3 w-3" viewBox="0 0 12 12" fill="none">
+                      <path d="M6 2v8M2 6h8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                    </svg>
+                    Apply suggested category
                   </button>
-                )}
-                {selectedCategory?.category_name === suggestedAgeCategory && (
-                  <span className="text-xs font-semibold text-emerald-700">✓ Applied</span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700">
+                    <svg className="h-3.5 w-3.5" viewBox="0 0 12 12" fill="none">
+                      <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                    Applied
+                  </span>
                 )}
               </div>
             </div>
           )}
 
-          {!hasAgeCategories && selectedCategory && (
+          {!hasAgeCategories && selectedCategoryLabels.length > 0 && (
             <p className="text-xs text-slate-600">
-              Selected: <span className="font-semibold text-slate-900">{selectedCategory.category_name}</span>
+              Selected:{' '}
+              <span className="font-semibold text-slate-900">{selectedCategoryLabels.join(', ')}</span>
             </p>
           )}
         </div>
@@ -713,8 +802,8 @@ export function RegistrationForm() {
                 type="button"
                 onClick={() => setShirtSize(size)}
                 className={`min-w-[3rem] rounded-md border px-3 py-2 text-sm sm:min-w-[3.25rem] ${shirtSize === size
-                    ? 'border-[#cfae3f] bg-[#fff6d6] text-slate-900'
-                    : 'border-slate-300 bg-white text-slate-700 hover:text-slate-900'
+                  ? 'border-[#cfae3f] bg-[#fff6d6] text-slate-900'
+                  : 'border-slate-300 bg-white text-slate-700 hover:text-slate-900'
                   }`}
               >
                 {size}
@@ -739,11 +828,18 @@ export function RegistrationForm() {
                 </span>
               </p>
               <p>
+                Categories:{' '}
+                <span className="font-medium text-slate-900">
+                  {selectedCategoryLabels.length > 0 ? selectedCategoryLabels.join(', ') : '—'}
+                </span>
+              </p>
+              <p>
                 Total Fee:{' '}
                 <span className="font-semibold text-slate-900">₱{totalFee.toLocaleString()}</span>
-                {selectedEventTypeSlugs.length > 1 && (
+                {(selectedEventTypeSlugs.length > 1 || selectedCategoryIdsInDiscipline.length > 1) && (
                   <span className="ml-1 text-xs text-slate-400">
-                    ({selectedEventTypeSlugs.length} × ₱{registrationFee.toLocaleString()})
+                    ({selectedEventTypeSlugs.length} types × {selectedCategoryIdsInDiscipline.length} categories × ₱
+                    {registrationFee.toLocaleString()})
                   </span>
                 )}
               </p>

@@ -27,6 +27,15 @@ export type RegistrationCheckoutEntry = {
   label: string
 }
 
+/** One payable registration line (event type × race category). */
+export type RegistrationCheckoutLine = {
+  slug: string
+  label: string
+  raceCategoryId: string
+  /** Race category display name for rider details on this registration row. */
+  categoryName?: string
+}
+
 /** Serialized on the payment step immediately before PayMongo (DB row created on Proceed). */
 export type RegistrationCheckoutPayload = {
   raceType: RegistrationEventKey
@@ -41,6 +50,8 @@ export type RegistrationCheckoutPayload = {
   checkoutBundleId: string
   /** One DB registration per selected event type. */
   eventEntries: RegistrationCheckoutEntry[]
+  /** Canonical lines: one DB registration per event-type + category pair (preferred over eventEntries alone). */
+  checkoutLines?: RegistrationCheckoutLine[]
   /** For payment UI before a DB row exists */
   eventTitle?: string
   raceTypeLabel?: string
@@ -63,6 +74,49 @@ export type RegistrationCheckoutPayload = {
 
 export const REGISTRATION_CHECKOUT_STORAGE_KEY = 'hna_registration_checkout_v1'
 
+function dedupeCheckoutLines(lines: RegistrationCheckoutLine[]): RegistrationCheckoutLine[] {
+  const seen = new Set<string>()
+  const out: RegistrationCheckoutLine[] = []
+  for (const l of lines) {
+    const slug = String(l.slug ?? '').trim()
+    const raceCategoryId = String(l.raceCategoryId ?? '').trim()
+    if (!raceCategoryId) continue
+    const k = `${slug}|${raceCategoryId}`
+    if (seen.has(k)) continue
+    seen.add(k)
+    out.push({
+      slug,
+      label: String(l.label ?? '').trim() || slug || 'Event',
+      raceCategoryId,
+      categoryName: typeof l.categoryName === 'string' ? l.categoryName.trim() || undefined : undefined,
+    })
+  }
+  return out
+}
+
+/** Resolves stored checkout into one row per registration to create (event type × category). */
+export function resolveCheckoutLines(payload: RegistrationCheckoutPayload | null): RegistrationCheckoutLine[] {
+  if (!payload) return []
+  const rawLines = payload.checkoutLines
+  if (Array.isArray(rawLines) && rawLines.length > 0) {
+    return dedupeCheckoutLines(rawLines as RegistrationCheckoutLine[])
+  }
+  const cat = String(payload.raceCategoryId ?? '').trim()
+  const entries =
+    Array.isArray(payload.eventEntries) && payload.eventEntries.length > 0
+      ? payload.eventEntries
+      : [{ slug: '', label: String(payload.raceType ?? '').trim() || 'Event' }]
+  if (!cat) return []
+  return dedupeCheckoutLines(
+    entries.map((e) => ({
+      slug: String(e.slug ?? '').trim(),
+      label: String(e.label ?? '').trim() || String(payload.raceType ?? 'Event'),
+      raceCategoryId: cat,
+      categoryName: undefined,
+    })),
+  )
+}
+
 export function loadRegistrationCheckoutPayload(): RegistrationCheckoutPayload | null {
   if (typeof window === 'undefined') return null
   try {
@@ -74,6 +128,7 @@ export function loadRegistrationCheckoutPayload(): RegistrationCheckoutPayload |
       registrationFee?: number
       eventEntries?: RegistrationCheckoutEntry[]
       checkoutBundleId?: string
+      checkoutLines?: RegistrationCheckoutLine[]
     }
     if (!Array.isArray(p.eventEntries) || p.eventEntries.length === 0) {
       const legacyFee = Number(p.registrationFee ?? p.registrationFeeTotal ?? p.registrationFeePerEntry ?? 0)
@@ -85,13 +140,21 @@ export function loadRegistrationCheckoutPayload(): RegistrationCheckoutPayload |
           ? p.checkoutBundleId
           : globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-legacy`
     } else if (!Number.isFinite(Number(p.registrationFeePerEntry)) || !(Number(p.registrationFeeTotal) >= 0)) {
-      const n = Math.max(1, p.eventEntries.length)
+      const lineCount = Math.max(
+        1,
+        Array.isArray(p.checkoutLines) && p.checkoutLines.length > 0 ? p.checkoutLines.length : p.eventEntries.length,
+      )
       const total = Number(p.registrationFeeTotal ?? p.registrationFee ?? p.registrationFeePerEntry ?? 0)
-      p.registrationFeeTotal = total > 0 ? total : n
-      p.registrationFeePerEntry = total > 0 ? total / n : 1
+      p.registrationFeeTotal = total > 0 ? total : lineCount
+      p.registrationFeePerEntry = total > 0 ? total / lineCount : 1
     }
     if (!p.checkoutBundleId?.trim())
       p.checkoutBundleId = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-fallback`
+
+    const resolved = resolveCheckoutLines(p as RegistrationCheckoutPayload)
+    if (resolved.length > 0) {
+      ;(p as RegistrationCheckoutPayload).checkoutLines = resolved
+    }
     return p as RegistrationCheckoutPayload
   } catch {
     return null
@@ -366,6 +429,29 @@ export const registrationService = {
       id: String(r.id),
       entry_event_type_label: r.entry_event_type_label ?? null,
     }))
+  },
+
+  /** All registration row ids in the same checkout bundle (including `registrationId`), creation order. */
+  async listCheckoutBundleRegistrationIds(registrationId: string): Promise<string[]> {
+    const { data: reg, error: e1 } = await supabase
+      .from('registration_forms')
+      .select('checkout_bundle_id, user_id')
+      .eq('id', registrationId)
+      .maybeSingle()
+    if (e1) throw e1
+    const bundleId = reg?.checkout_bundle_id ? String(reg.checkout_bundle_id) : ''
+    const userId = reg?.user_id ? String(reg.user_id) : ''
+    if (!bundleId || !userId) return [registrationId]
+
+    const { data: rows, error: e2 } = await supabase
+      .from('registration_forms')
+      .select('id')
+      .eq('checkout_bundle_id', bundleId)
+      .eq('user_id', userId)
+      .order('created_at', { ascending: true })
+    if (e2) throw e2
+    const ids = (rows ?? []).map((r) => String(r.id)).filter(Boolean)
+    return ids.length > 0 ? ids : [registrationId]
   },
 
   async markRegistrationAsPaidAfterPaymongoRedirect(registrationId: string) {

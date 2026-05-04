@@ -7,6 +7,9 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY') ?? ''
 const RESEND_FROM = Deno.env.get('RESEND_FROM') ?? ''
+// Production domain used as fallback when PUBLIC_SITE_URL env var is not set.
+// Override locally: add PUBLIC_SITE_URL=http://localhost:5173 to your .env / Supabase secrets.
+const DEFAULT_PUBLIC_SITE_URL = 'https://www.alloutmultisports.com'
 
 const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
