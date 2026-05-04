@@ -150,10 +150,12 @@ Deno.serve(async (req: Request) => {
 
   const normalizedStatus = normalizeStatus(paymentAttrs?.status)
   const paidAt = paymentAttrs?.paid_at ? new Date(Number(paymentAttrs.paid_at) * 1000).toISOString() : null
+  const paymongoPaymentId = paymentData?.id ? String(paymentData.id).trim() : ''
 
   const { error: txError } = await supabase.from('payment_transactions').insert({
     payment_order_id: order.id,
     paymongo_payment_id: paymentData?.id ?? null,
+    provider_reference: paymongoPaymentId || null,
     status: normalizedStatus,
     amount: (paymentAttrs?.amount ?? 0) / 100,
     currency: paymentAttrs?.currency ?? 'PHP',
@@ -171,6 +173,10 @@ Deno.serve(async (req: Request) => {
   }
   if (normalizedStatus === 'paid') {
     orderPatch.paid_at = paidAt ?? new Date().toISOString()
+  }
+  // Admin "Reference No." reads payment_orders.provider_reference; PayMongo dashboard Payment ID is pay_…
+  if (paymongoPaymentId) {
+    orderPatch.provider_reference = paymongoPaymentId
   }
 
   const { error: orderUpdateError } = await supabase.from('payment_orders').update(orderPatch).eq('id', order.id)

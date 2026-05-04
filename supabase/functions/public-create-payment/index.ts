@@ -48,7 +48,8 @@ async function createPayMongoCheckoutSession(args: {
           },
         ],
         payment_method_types: ['gcash', 'paymaya', 'card'],
-        success_url: `${appOrigin}/register/payment?registrationId=${encodeURIComponent(args.registrationId)}&payment=success`,
+        // Land on success page immediately after PayMongo "back to merchant" (avoid staging on /register/payment).
+        success_url: `${appOrigin}/register/payment-success?registrationId=${encodeURIComponent(args.registrationId)}`,
         cancel_url: `${appOrigin}/register/payment?registrationId=${encodeURIComponent(args.registrationId)}&payment=cancelled`,
         metadata: {
           registration_id: args.registrationId,
@@ -117,12 +118,11 @@ Deno.serve(async (req) => {
     Number.isFinite(clientAmount) && clientAmount > 0 ? clientAmount : fallbackFee > 0 ? fallbackFee : 0
 
   async function bundleTotalIfNeeded(): Promise<number> {
-    if (!registration.checkout_bundle_id || !registration.user_id) return resolvedAmount
+    if (!registration.checkout_bundle_id) return resolvedAmount
     const { data: rows, error: sumErr } = await supabase
       .from('registration_forms')
       .select('registration_fee')
       .eq('checkout_bundle_id', registration.checkout_bundle_id)
-      .eq('user_id', registration.user_id)
     if (sumErr || !rows?.length) return resolvedAmount
     const sum = rows.reduce((s, r) => s + Number(r.registration_fee ?? 0), 0)
     return sum > 0 ? sum : resolvedAmount
@@ -221,11 +221,10 @@ Deno.serve(async (req) => {
 
   const stamp = new Date().toISOString()
   let statusUpdateError
-  if (registration.checkout_bundle_id && registration.user_id) {
+  if (registration.checkout_bundle_id) {
     const r = await supabase
       .from('registration_forms')
       .update({ status: 'payment_processing', updated_at: stamp })
-      .eq('user_id', registration.user_id)
       .eq('checkout_bundle_id', registration.checkout_bundle_id)
       .in('status', ['pending_payment', 'payment_processing'])
     statusUpdateError = r.error

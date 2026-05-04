@@ -341,10 +341,8 @@ export const registrationService = {
       .from('registration_forms')
       .update({ status: 'cancelled', updated_at: stamp })
       .in('status', ['payment_processing', 'pending_payment'])
-    if (reg?.checkout_bundle_id && reg?.user_id) {
-      regCancel = regCancel
-        .eq('checkout_bundle_id', reg.checkout_bundle_id as string)
-        .eq('user_id', reg.user_id as string)
+    if (reg?.checkout_bundle_id) {
+      regCancel = regCancel.eq('checkout_bundle_id', reg.checkout_bundle_id as string)
     } else {
       regCancel = regCancel.eq('id', registrationId)
     }
@@ -373,13 +371,11 @@ export const registrationService = {
     let lineItemCount = 1
 
     const bundleId = registration.checkout_bundle_id ? String(registration.checkout_bundle_id) : ''
-    const userId = registration.user_id ? String(registration.user_id) : ''
-    if (bundleId && userId) {
+    if (bundleId) {
       const { data: rows, error: bundleErr } = await supabase
         .from('registration_forms')
         .select('registration_fee, entry_event_type_label')
         .eq('checkout_bundle_id', bundleId)
-        .eq('user_id', userId)
         .order('created_at', { ascending: true })
 
       if (!bundleErr && rows?.length) {
@@ -410,19 +406,17 @@ export const registrationService = {
   > {
     const { data: reg, error: e1 } = await supabase
       .from('registration_forms')
-      .select('checkout_bundle_id, user_id')
+      .select('checkout_bundle_id')
       .eq('id', registrationId)
       .maybeSingle()
     if (e1) throw e1
     const bundleId = reg?.checkout_bundle_id ? String(reg.checkout_bundle_id) : ''
-    const userId = reg?.user_id ? String(reg.user_id) : ''
-    if (!bundleId || !userId) return []
+    if (!bundleId) return []
 
     const { data: rows, error: e2 } = await supabase
       .from('registration_forms')
       .select('id, entry_event_type_label')
       .eq('checkout_bundle_id', bundleId)
-      .eq('user_id', userId)
       .order('created_at', { ascending: true })
     if (e2) throw e2
     return (rows ?? []).map((r) => ({
@@ -435,19 +429,17 @@ export const registrationService = {
   async listCheckoutBundleRegistrationIds(registrationId: string): Promise<string[]> {
     const { data: reg, error: e1 } = await supabase
       .from('registration_forms')
-      .select('checkout_bundle_id, user_id')
+      .select('checkout_bundle_id')
       .eq('id', registrationId)
       .maybeSingle()
     if (e1) throw e1
     const bundleId = reg?.checkout_bundle_id ? String(reg.checkout_bundle_id) : ''
-    const userId = reg?.user_id ? String(reg.user_id) : ''
-    if (!bundleId || !userId) return [registrationId]
+    if (!bundleId) return [registrationId]
 
     const { data: rows, error: e2 } = await supabase
       .from('registration_forms')
       .select('id')
       .eq('checkout_bundle_id', bundleId)
-      .eq('user_id', userId)
       .order('created_at', { ascending: true })
     if (e2) throw e2
     const ids = (rows ?? []).map((r) => String(r.id)).filter(Boolean)

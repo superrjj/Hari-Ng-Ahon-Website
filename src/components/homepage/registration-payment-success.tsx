@@ -1,5 +1,5 @@
 import QRCode from 'qrcode'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { supabase } from '../../lib/supabase'
@@ -44,22 +44,18 @@ export function RegistrationPaymentSuccess() {
   const [error, setError] = useState<string | null>(null)
   const [certificateData, setCertificateData] = useState<RegistrationCertificateData | null>(null)
   const [checkingStatus, setCheckingStatus] = useState(false)
-  const [certificatePreviewUrl, setCertificatePreviewUrl] = useState<string | null>(null)
+  const [bundleCertificatePreviewUrls, setBundleCertificatePreviewUrls] = useState<
+    Record<string, string | null>
+  >({})
   const [autoEmailMessage, setAutoEmailMessage] = useState<string | null>(null)
   const [needsLoginToFinalize, setNeedsLoginToFinalize] = useState(false)
-  const [bundleSiblingCertState, setBundleSiblingCertState] = useState<{
-    registrationIdForRows: string | null
-    rows: Array<{ id: string; entry_event_type_label: string | null }>
-  }>({ registrationIdForRows: null, rows: [] })
+  /** Every registration line in this checkout (same order as DB); previews keyed by registrationId */
+  const [bundleCertificateRows, setBundleCertificateRows] = useState<
+    Array<{ registrationId: string; data: RegistrationCertificateData }>
+  >([])
 
-  const siblingCertsToRender =
-    registrationId && bundleSiblingCertState.registrationIdForRows === registrationId
-      ? bundleSiblingCertState.rows
-      : []
-
-  const createCertificateDataUrl = useCallback(
-    async (mimeType: 'image/png' | 'image/jpeg') => {
-      if (!certificateData) throw new Error('Certificate data is not ready yet.')
+  const renderCertificateToDataUrl = useCallback(
+    async (data: RegistrationCertificateData, mimeType: 'image/png' | 'image/jpeg') => {
       const canvas = document.createElement('canvas')
       canvas.width = 1280
       canvas.height = 720
@@ -139,8 +135,8 @@ export function RegistrationPaymentSuccess() {
         ctx.drawImage(hnaLogo, cursorX, logoY, hnaWidth, logoHeight)
       }
 
-      const riderUpper = certificateData.riderName.toUpperCase()
-      const eventUpper = certificateData.eventTitle.toUpperCase()
+      const riderUpper = data.riderName.toUpperCase()
+      const eventUpper = data.eventTitle.toUpperCase()
 
       let y = logoY + logoHeight + 16
       ctx.fillStyle = '#64748b'
@@ -196,13 +192,13 @@ export function RegistrationPaymentSuccess() {
       ctx.fillText('BIB NUMBER', leftColX + 22, bibBoxTop + 36)
       ctx.fillStyle = '#0f172a'
       ctx.font = '900 64px Arial'
-      ctx.fillText(certificateData.bibNumber, leftColX + 20, bibBoxTop + 96)
+      ctx.fillText(data.bibNumber, leftColX + 20, bibBoxTop + 96)
       // REMOVED: category code label and value
 
       const metaY = bibBoxTop + 120 + 32
-      drawLabelValue('CATEGORY', certificateData.category, leftColX, metaY, 420)
-      drawLabelValue('DISCIPLINE', certificateData.discipline, 540, metaY, 220)
-      drawLabelValue('EVENT TYPE', certificateData.eventType, leftColX, metaY + 62, 640)
+      drawLabelValue('CATEGORY', data.category, leftColX, metaY, 420)
+      drawLabelValue('DISCIPLINE', data.discipline, 540, metaY, 220)
+      drawLabelValue('EVENT TYPE', data.eventType, leftColX, metaY + 62, 640)
       //                                                                       ↑ increased from 52 to 62
 
       const qrSize = 192
@@ -218,7 +214,7 @@ export function RegistrationPaymentSuccess() {
       const qrImgX = qrCardX + (qrCardWidth - qrSize) / 2
       const qrTextTop = qrImgY + qrSize + 20
 
-      const qrDataUrl = await QRCode.toDataURL(certificateData.qrValue, {
+      const qrDataUrl = await QRCode.toDataURL(data.qrValue, {
         width: qrSize,
         margin: 1,
         color: { dark: '#111827', light: '#ffffff' },
@@ -241,18 +237,18 @@ export function RegistrationPaymentSuccess() {
 
       ctx.fillStyle = '#111827'
       ctx.font = '900 40px Arial'
-      const bibWidth = ctx.measureText(certificateData.bibNumber).width
-      ctx.fillText(certificateData.bibNumber, qrCardX + (qrCardWidth - bibWidth) / 2, qrTextTop + 28)
+      const bibWidth = ctx.measureText(data.bibNumber).width
+      ctx.fillText(data.bibNumber, qrCardX + (qrCardWidth - bibWidth) / 2, qrTextTop + 28)
 
       ctx.fillStyle = '#64748b'
       ctx.font = '600 15px Arial'
-      const regWidth = ctx.measureText(certificateData.verificationId).width
-      ctx.fillText(certificateData.verificationId, qrCardX + (qrCardWidth - regWidth) / 2, qrTextTop + 56)
+      const regWidth = ctx.measureText(data.verificationId).width
+      ctx.fillText(data.verificationId, qrCardX + (qrCardWidth - regWidth) / 2, qrTextTop + 56)
 
       const fileType = mimeType === 'image/png' ? 'image/png' : 'image/jpeg'
       return canvas.toDataURL(fileType, 0.92)
     },
-    [certificateData],
+    [],
   )
 
   const fetchCertificateData = useCallback(async () => {
@@ -274,25 +270,31 @@ export function RegistrationPaymentSuccess() {
   }, [registrationId])
 
   useEffect(() => {
-    if (!registrationId) return
+    if (!registrationId) {
+      setBundleCertificateRows([])
+      return
+    }
     let cancelled = false
-    void registrationService
-      .listCheckoutBundleCertificates(registrationId)
-      .then((rows) => {
-        if (cancelled) return
-        setBundleSiblingCertState({
-          registrationIdForRows: registrationId,
-          rows: rows.filter((r) => r.id !== registrationId),
-        })
-      })
-      .catch(() => {
-        if (cancelled) return
-        setBundleSiblingCertState({ registrationIdForRows: registrationId, rows: [] })
-      })
+    void (async () => {
+      try {
+        const ids = await registrationService.listCheckoutBundleRegistrationIds(registrationId)
+        const rows = (
+          await Promise.all(
+            ids.map(async (id) => {
+              const certData = await registrationService.getRegistrationCertificateData(id)
+              return certData ? { registrationId: id, data: certData } : null
+            }),
+          )
+        ).filter(Boolean) as Array<{ registrationId: string; data: RegistrationCertificateData }>
+        if (!cancelled) setBundleCertificateRows(rows)
+      } catch {
+        if (!cancelled) setBundleCertificateRows([])
+      }
+    })()
     return () => {
       cancelled = true
     }
-  }, [registrationId])
+  }, [registrationId, certificateData])
 
   useEffect(() => {
     let mounted = true
@@ -332,7 +334,7 @@ export function RegistrationPaymentSuccess() {
   const handleDownload = useCallback(
     async (mimeType: 'image/png' | 'image/jpeg') => {
       if (!certificateData) return
-      const url = await createCertificateDataUrl(mimeType)
+      const url = await renderCertificateToDataUrl(certificateData, mimeType)
       const a = document.createElement('a')
       const extension = mimeType === 'image/png' ? 'png' : 'jpg'
       a.href = url
@@ -342,7 +344,7 @@ export function RegistrationPaymentSuccess() {
       a.click()
       a.remove()
     },
-    [certificateData, createCertificateDataUrl],
+    [certificateData, renderCertificateToDataUrl],
   )
 
   const refreshPaymentStatus = useCallback(async () => {
@@ -365,74 +367,150 @@ export function RegistrationPaymentSuccess() {
     }
   }, [fetchCertificateData, registrationId, session?.access_token])
 
-  useEffect(() => {
-    let mounted = true
-    async function buildPreview() {
-      if (!certificateData) {
-        setCertificatePreviewUrl(null)
-        return
-      }
-      try {
-        const url = await createCertificateDataUrl('image/png')
-        if (mounted) setCertificatePreviewUrl(url)
-      } catch {
-        if (mounted) setCertificatePreviewUrl(null)
-      }
+  const previewRows = useMemo(() => {
+    if (bundleCertificateRows.length > 0) return bundleCertificateRows
+    if (certificateData && registrationId) {
+      return [{ registrationId: certificateData.registrationId, data: certificateData }]
     }
-    void buildPreview()
+    return []
+  }, [bundleCertificateRows, certificateData, registrationId])
+
+  useEffect(() => {
+    if (previewRows.length === 0) {
+      setBundleCertificatePreviewUrls({})
+      return
+    }
+    let mounted = true
+    void (async () => {
+      const next: Record<string, string | null> = {}
+      await Promise.all(
+        previewRows.map(async ({ registrationId: rid, data }) => {
+          try {
+            next[rid] = await renderCertificateToDataUrl(data, 'image/png')
+          } catch {
+            next[rid] = null
+          }
+        }),
+      )
+      if (mounted) setBundleCertificatePreviewUrls(next)
+    })()
     return () => {
       mounted = false
     }
-  }, [certificateData, createCertificateDataUrl])
+  }, [previewRows, renderCertificateToDataUrl])
 
   useEffect(() => {
     let active = true
     async function sendRaceClaimCertificateEmail() {
       if (!certificateData?.isPaid || !certificateData.registrantEmail?.trim()) return
       if (!certificateData.bibNumber?.trim()) return
-      const dedupeKey = `cert-email-sent:${certificateData.registrationId}`
-      if (window.localStorage.getItem(dedupeKey) === '1') return
 
       const { data: sess } = await supabase.auth.getSession()
       const token = sess.session?.access_token
       if (!token) return
 
+      let bundleIds: string[] = [certificateData.registrationId]
       try {
-        const { data, error } = await supabase.functions.invoke('send-race-claim-certificate-email', {
-          headers: { Authorization: `Bearer ${token}` },
-          body: { registrationId: certificateData.registrationId },
-        })
+        bundleIds = await registrationService.listCheckoutBundleRegistrationIds(certificateData.registrationId)
+      } catch {
+        bundleIds = [certificateData.registrationId]
+      }
+
+      const allDeduped = bundleIds.every((id) => window.localStorage.getItem(`cert-email-sent:${id}`) === '1')
+      if (allDeduped) {
         if (!active) return
-        if (error) {
-          const raw = (error as { message?: string }).message ?? ''
-          if (raw.toLowerCase().includes('resend') || raw.includes('503')) {
-            setAutoEmailMessage('Certificate email is not available yet (mail not configured). You can download your certificate below.')
-            return
+        setAutoEmailMessage(
+          bundleIds.length > 1
+            ? 'Your QR Code Race Claim Kit certificates were already sent to your email.'
+            : 'Your QR Code Race Claim Kit was already sent to your email.',
+        )
+        return
+      }
+
+      try {
+        let sentCount = 0
+        let skippedAlready = 0
+        let mailUnavailable = false
+
+        for (const regId of bundleIds) {
+          const dedupeKey = `cert-email-sent:${regId}`
+          if (window.localStorage.getItem(dedupeKey) === '1') {
+            skippedAlready++
+            continue
           }
-          setAutoEmailMessage('Could not send your certificate email. You can still download it below, or contact support.')
-          return
-        }
-        const payload = data as { ok?: boolean; skipped?: boolean; reason?: string; error?: string; detail?: string } | null
-        if (payload?.error) {
-          const detail = typeof payload.detail === 'string' ? payload.detail : ''
-          if (String(payload.error).includes('RESEND_API_KEY') || detail.includes('resend')) {
-            setAutoEmailMessage('Certificate email is not available yet (mail not configured). You can download your certificate below.')
-            return
+
+          const { data, error } = await supabase.functions.invoke('send-race-claim-certificate-email', {
+            headers: { Authorization: `Bearer ${token}` },
+            body: { registrationId: regId },
+          })
+          if (!active) return
+
+          if (error) {
+            const raw = (error as { message?: string }).message ?? ''
+            if (raw.toLowerCase().includes('resend') || raw.includes('503')) {
+              mailUnavailable = true
+              break
+            }
+            continue
           }
-          setAutoEmailMessage(String(payload.error))
+
+          const payload = data as { ok?: boolean; skipped?: boolean; reason?: string; error?: string; detail?: string } | null
+          if (payload?.error) {
+            const detail = typeof payload.detail === 'string' ? payload.detail : ''
+            if (String(payload.error).includes('RESEND_API_KEY') || detail.includes('resend')) {
+              mailUnavailable = true
+              break
+            }
+            continue
+          }
+
+          if (payload?.skipped && payload?.reason === 'already_sent') {
+            window.localStorage.setItem(dedupeKey, '1')
+            skippedAlready++
+            continue
+          }
+          if (payload?.ok) {
+            window.localStorage.setItem(dedupeKey, '1')
+            sentCount++
+          }
+        }
+
+        if (!active) return
+
+        if (mailUnavailable) {
+          setAutoEmailMessage(
+            'Certificate email is not available yet (mail not configured). You can download your certificate below.',
+          )
           return
         }
-        if (payload?.skipped && payload?.reason === 'already_sent') {
-          window.localStorage.setItem(dedupeKey, '1')
-          setAutoEmailMessage('Your QR Code Race Claim Kit was already sent to your email.')
+
+        if (sentCount > 0) {
+          if (sentCount < bundleIds.length) {
+            setAutoEmailMessage(
+              `${sentCount} of ${bundleIds.length} certificate emails were sent. Tap Refresh / assign bib after each line has a bib, or open each “Other registrations” link — another send runs automatically.`,
+            )
+          } else if (bundleIds.length > 1) {
+            setAutoEmailMessage(
+              `${sentCount} QR Code Race Claim Kit certificates were sent to your email (one email per registration line).`,
+            )
+          } else {
+            setAutoEmailMessage('Your QR Code Race Claim Kit certificate was sent to your email.')
+          }
           return
         }
-        if (payload?.ok) {
-          window.localStorage.setItem(dedupeKey, '1')
-          setAutoEmailMessage('Your QR Code Race Claim Kit certificate was sent to your email.')
+
+        if (skippedAlready >= bundleIds.length) {
+          setAutoEmailMessage(
+            bundleIds.length > 1
+              ? 'Your QR Code Race Claim Kit certificates were already sent to your email.'
+              : 'Your QR Code Race Claim Kit was already sent to your email.',
+          )
           return
         }
-        setAutoEmailMessage('Certificate email could not be confirmed. You can download your certificate below.')
+
+        setAutoEmailMessage(
+          'Could not send every certificate email yet (bibs may still be assigning). You can download below or use Refresh.',
+        )
       } catch {
         if (!active) return
         setAutoEmailMessage('Certificate email failed to send. Please download your certificate below or contact support.')
@@ -556,36 +634,61 @@ export function RegistrationPaymentSuccess() {
                 </p>
               </div>
 
-              <div className="rounded-lg border border-slate-200 bg-white p-2">
-                {certificatePreviewUrl ? (
-                  <img src={certificatePreviewUrl} alt="QR Certificate Preview" className="w-full rounded-md" />
-                ) : (
-                  <div
-                    className="aspect-video w-full rounded-md bg-gradient-to-r from-slate-200 via-slate-100 to-slate-200 bg-[length:200%_100%] animate-[cert-preview-shimmer_1.4s_ease-in-out_infinite]"
-                    aria-hidden
-                  />
-                )}
+              <div className="space-y-6">
+                {previewRows.map((row) => {
+                  const previewUrl = bundleCertificatePreviewUrls[row.registrationId]
+                  const isCurrentEntry = row.registrationId === registrationId
+                  return (
+                    <div key={row.registrationId} className="space-y-2">
+                      <div className="flex flex-wrap items-start justify-between gap-2 border-b border-slate-100 pb-2">
+                        <div className="text-xs text-slate-600">
+                          <p className="font-semibold text-slate-900">{row.data.eventType}</p>
+                          <p className="mt-0.5">
+                            {row.data.category}
+                            <span className="mx-1.5 text-slate-400">·</span>
+                            Bib{' '}
+                            <span className="font-semibold text-slate-800">
+                              {row.data.bibNumber?.trim() ? row.data.bibNumber : '—'}
+                            </span>
+                            {isCurrentEntry ? (
+                              <span className="ml-2 rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-emerald-800">
+                                This page
+                              </span>
+                            ) : null}
+                          </p>
+                        </div>
+                        {!isCurrentEntry && registrationId ? (
+                          <Link
+                            to={`/register/payment-success?registrationId=${encodeURIComponent(row.registrationId)}`}
+                            className="shrink-0 text-xs font-medium text-green-700 underline hover:text-green-900"
+                          >
+                            Open this entry only
+                          </Link>
+                        ) : null}
+                      </div>
+                      <div className="rounded-lg border border-slate-200 bg-white p-2">
+                        {previewUrl ? (
+                          <img
+                            src={previewUrl}
+                            alt={`QR certificate · ${row.data.eventType}`}
+                            className="w-full rounded-md"
+                          />
+                        ) : (
+                          <div
+                            className="aspect-video w-full rounded-md bg-gradient-to-r from-slate-200 via-slate-100 to-slate-200 bg-[length:200%_100%] animate-[cert-preview-shimmer_1.4s_ease-in-out_infinite]"
+                            aria-hidden
+                          />
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
 
-              {siblingCertsToRender.length > 0 ? (
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-800">
-                  <p className="font-semibold text-slate-900">Other registrations in this payment</p>
-                  <p className="mt-1 text-xs text-slate-600">
-                    Each event has its own bib and QR certificate. Open each link after payment completes.
-                  </p>
-                  <ul className="mt-3 list-disc space-y-1 pl-5">
-                    {siblingCertsToRender.map((row) => (
-                      <li key={row.id}>
-                        <Link
-                          to={`/register/payment-success?registrationId=${encodeURIComponent(row.id)}`}
-                          className="font-medium text-green-700 underline hover:text-green-900"
-                        >
-                          {String(row.entry_event_type_label ?? 'Event').trim() || 'Certificate'}
-                        </Link>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
+              {previewRows.length > 1 ? (
+                <p className="text-xs text-slate-500">
+                  One certificate preview per event type and category you registered for in this payment.
+                </p>
               ) : null}
 
               {autoEmailMessage ? <p className="text-sm text-slate-600">{autoEmailMessage}</p> : null}

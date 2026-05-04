@@ -84,19 +84,18 @@ export async function markRegistrationConfirmed(
 }
 
 /**
- * Confirm + bib for every registration row in the same PayMongo checkout bundle (same `checkout_bundle_id` + `user_id`).
- * The primary row is usually already confirmed by the caller; this keeps sibling rows in sync.
+ * Confirm + bib for every registration row in the same PayMongo checkout (same `checkout_bundle_id`).
+ * Do not filter by `user_id`: sibling lines must still finalize if `user_id` is null or differs (common DB drift).
  */
 export async function finalizeBundleSiblingsPaid(supabase: SupabaseClient, primaryRegistrationId: string) {
   const { data: primary, error: pErr } = await supabase
     .from('registration_forms')
-    .select('id, checkout_bundle_id, user_id')
+    .select('id, checkout_bundle_id')
     .eq('id', primaryRegistrationId)
     .maybeSingle()
   if (pErr) throw pErr
   const bundleId = primary?.checkout_bundle_id ? String(primary.checkout_bundle_id) : ''
-  const userId = primary?.user_id ? String(primary.user_id) : ''
-  if (!bundleId || !userId || !primary?.id) return
+  if (!bundleId || !primary?.id) return
 
   const paidNow = new Date().toISOString()
   const { error: bundleConfirmErr } = await supabase
@@ -107,14 +106,12 @@ export async function finalizeBundleSiblingsPaid(supabase: SupabaseClient, prima
       updated_at: paidNow,
     })
     .eq('checkout_bundle_id', bundleId)
-    .eq('user_id', userId)
   if (bundleConfirmErr) throw bundleConfirmErr
 
   const { data: bundleRows, error: listErr } = await supabase
     .from('registration_forms')
     .select('id')
     .eq('checkout_bundle_id', bundleId)
-    .eq('user_id', userId)
   if (listErr) throw listErr
 
   const bibErrors: string[] = []

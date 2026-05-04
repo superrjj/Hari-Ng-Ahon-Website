@@ -51,8 +51,33 @@ Deno.serve(async (req) => {
 
   if (regLookupError) return jsonResponse({ error: regLookupError.message }, 500)
   if (!registration?.id) return jsonResponse({ error: 'Registration not found' }, 404)
-  if (String(registration.user_id) !== userId) {
-    return jsonResponse({ code: 'FORBIDDEN', message: 'Not your registration' }, 403)
+  // Own row directly, OR any bundle line when the PayMongo primary row for that bundle belongs to this user
+  // (sibling rows sometimes have null / stale user_id and must still finalize).
+  if (String(registration.user_id ?? '') !== userId) {
+    const bid = String(registration.checkout_bundle_id ?? '').trim()
+    if (!bid) {
+      return jsonResponse({ code: 'FORBIDDEN', message: 'Not your registration' }, 403)
+    }
+    const { data: bundlePay, error: bpErr } = await supabase
+      .from('payment_orders')
+      .select('registration_id')
+      .eq('checkout_bundle_id', bid)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (bpErr) return jsonResponse({ error: bpErr.message }, 500)
+    if (!bundlePay?.registration_id) {
+      return jsonResponse({ code: 'FORBIDDEN', message: 'Not your registration' }, 403)
+    }
+    const { data: primaryRow, error: prErr } = await supabase
+      .from('registration_forms')
+      .select('user_id')
+      .eq('id', bundlePay.registration_id)
+      .maybeSingle()
+    if (prErr) return jsonResponse({ error: prErr.message }, 500)
+    if (String(primaryRow?.user_id ?? '') !== userId) {
+      return jsonResponse({ code: 'FORBIDDEN', message: 'Not your registration' }, 403)
+    }
   }
 
   const now = new Date().toISOString()
@@ -81,15 +106,17 @@ Deno.serve(async (req) => {
     if (bundleOrder?.id) {
       const { data: orderOwner, error: ownerErr } = await supabase
         .from('registration_forms')
-        .select('id, user_id, checkout_bundle_id')
+        .select('id, checkout_bundle_id')
         .eq('id', bundleOrder.registration_id)
         .maybeSingle()
       if (ownerErr) return jsonResponse({ error: ownerErr.message }, 500)
-      if (
-        orderOwner?.id &&
-        String(orderOwner.user_id) === userId &&
-        String(orderOwner.checkout_bundle_id ?? '').trim() === bundle
-      ) {
+      const { data: reqInBundle } = await supabase
+        .from('registration_forms')
+        .select('id')
+        .eq('id', registrationId)
+        .eq('checkout_bundle_id', bundle)
+        .maybeSingle()
+      if (orderOwner?.id && reqInBundle?.id && String(orderOwner.checkout_bundle_id ?? '').trim() === bundle) {
         order = bundleOrder
       }
     }

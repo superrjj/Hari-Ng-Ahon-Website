@@ -93,9 +93,9 @@ async function svgToPng(svg: string): Promise<Uint8Array> {
   // Fetch Inter font variants from Google Fonts static CDN so resvg can render text.
   // Without embedded fonts resvg renders all text as blank in the Deno edge runtime.
   const fontUrls = [
-    'https://fonts.gstatic.com/s/inter/v13/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuLyfAZ9hiJ-Ek-_EeA.woff2',  // 400
-    'https://fonts.gstatic.com/s/inter/v13/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuGKYAZ9hiJ-Ek-_EeA.woff2',  // 700
-    'https://fonts.gstatic.com/s/inter/v13/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuDyYAZ9hiJ-Ek-_EeA.woff2',  // 800
+    'https://fonts.gstatic.com/s/inter/v13/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuLyfAZ9hiJ-Ek-_EeA.woff2', // 400
+    'https://fonts.gstatic.com/s/inter/v13/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuGKYAZ9hiJ-Ek-_EeA.woff2', // 700
+    'https://fonts.gstatic.com/s/inter/v13/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuDyYAZ9hiJ-Ek-_EeA.woff2', // 800
   ]
   const fontBuffers = (await Promise.all(fontUrls.map(fetchFontBuffer))).filter(
     (b): b is Uint8Array => b !== null,
@@ -154,6 +154,8 @@ function buildCertificateSvg(args: {
     return parts.join('\n')
   })()
 
+  // Use "Inter" only: svgToPng embeds Inter WOFF2 buffers; Arial has no glyphs in the Edge runtime → blank text.
+  const ff = 'Inter'
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
   <rect width="${W}" height="${H}" fill="${bg}"/>
@@ -162,23 +164,23 @@ function buildCertificateSvg(args: {
   <path d="M ${W - 100} 0 L ${W} 0 L ${W} 72 Z" fill="${gold}"/>
   <circle cx="470" cy="380" r="220" fill="#94A3B8" opacity="0.08"/>
   ${logoBlock}
-  <text x="${leftX}" y="168" font-family="Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#64748B" letter-spacing="0.15em">QR CODE - RACE CLAIM KIT</text>
-  <text x="${leftX}" y="198" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="700" fill="${navy}">${eventUpper}</text>
-  <text x="${leftX}" y="242" font-family="Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#64748B">RIDER NAME</text>
-  <text x="${leftX}" y="298" font-family="Arial, Helvetica, sans-serif" font-size="44" font-weight="800" fill="${navy}">${riderUpper}</text>
+  <text x="${leftX}" y="168" font-family="${ff}" font-size="11" font-weight="700" fill="#64748B" letter-spacing="0.15em">QR CODE - RACE CLAIM KIT</text>
+  <text x="${leftX}" y="198" font-family="${ff}" font-size="22" font-weight="700" fill="${navy}">${eventUpper}</text>
+  <text x="${leftX}" y="242" font-family="${ff}" font-size="11" font-weight="700" fill="#64748B">RIDER NAME</text>
+  <text x="${leftX}" y="298" font-family="${ff}" font-size="44" font-weight="800" fill="${navy}">${riderUpper}</text>
   <rect x="${leftX}" y="318" width="360" height="120" rx="18" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1.5"/>
-  <text x="${leftX + 22}" y="360" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" fill="#475569">BIB NUMBER</text>
-  <text x="${leftX + 20}" y="412" font-family="Arial, Helvetica, sans-serif" font-size="56" font-weight="900" fill="#0F172A">${bibEsc}</text>
-  <text x="${leftX}" y="492" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="700" fill="#475569">CATEGORY</text>
-  <text x="${leftX}" y="512" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="600" fill="#0F172A">${catEsc}</text>
-  <text x="540" y="492" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="700" fill="#475569">DISCIPLINE</text>
-  <text x="540" y="512" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="600" fill="#0F172A">${discEsc}</text>
-  <text x="${leftX}" y="556" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="700" fill="#475569">EVENT TYPE</text>
-  <text x="${leftX}" y="576" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="600" fill="#0F172A">${evtEsc}</text>
+  <text x="${leftX + 22}" y="360" font-family="${ff}" font-size="14" font-weight="700" fill="#475569">BIB NUMBER</text>
+  <text x="${leftX + 20}" y="412" font-family="${ff}" font-size="56" font-weight="900" fill="#0F172A">${bibEsc}</text>
+  <text x="${leftX}" y="492" font-family="${ff}" font-size="12" font-weight="700" fill="#475569">CATEGORY</text>
+  <text x="${leftX}" y="512" font-family="${ff}" font-size="22" font-weight="700" fill="#0F172A">${catEsc}</text>
+  <text x="540" y="492" font-family="${ff}" font-size="12" font-weight="700" fill="#475569">DISCIPLINE</text>
+  <text x="540" y="512" font-family="${ff}" font-size="22" font-weight="700" fill="#0F172A">${discEsc}</text>
+  <text x="${leftX}" y="556" font-family="${ff}" font-size="12" font-weight="700" fill="#475569">EVENT TYPE</text>
+  <text x="${leftX}" y="576" font-family="${ff}" font-size="20" font-weight="700" fill="#0F172A">${evtEsc}</text>
   <rect x="808" y="140" width="416" height="440" rx="24" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1.5"/>
   <image href="${args.qrDataUrl}" x="920" y="176" width="192" height="192" preserveAspectRatio="xMidYMid meet"/>
-  <text x="1016" y="400" font-family="Arial, Helvetica, sans-serif" font-size="36" font-weight="900" fill="#0F172A" text-anchor="middle">${bibEsc}</text>
-  <text x="1016" y="432" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="600" fill="#64748B" text-anchor="middle">${regEsc}</text>
+  <text x="1016" y="400" font-family="${ff}" font-size="36" font-weight="900" fill="#0F172A" text-anchor="middle">${bibEsc}</text>
+  <text x="1016" y="432" font-family="${ff}" font-size="14" font-weight="700" fill="#64748B" text-anchor="middle">${regEsc}</text>
 </svg>`
 }
 
@@ -229,8 +231,27 @@ Deno.serve(async (req) => {
 
   if (regLookupError) return jsonResponse({ error: regLookupError.message }, 500)
   if (!registration?.id) return jsonResponse({ error: 'Registration not found' }, 404)
-  if (String(registration.user_id) !== userId) {
-    return jsonResponse({ code: 'FORBIDDEN', message: 'Not your registration' }, 403)
+  if (String(registration.user_id ?? '') !== userId) {
+    const bid = String(registration.checkout_bundle_id ?? '').trim()
+    if (!bid) return jsonResponse({ code: 'FORBIDDEN', message: 'Not your registration' }, 403)
+    const { data: bundlePay } = await supabaseAdmin
+      .from('payment_orders')
+      .select('registration_id')
+      .eq('checkout_bundle_id', bid)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (!bundlePay?.registration_id) {
+      return jsonResponse({ code: 'FORBIDDEN', message: 'Not your registration' }, 403)
+    }
+    const { data: primaryRow } = await supabaseAdmin
+      .from('registration_forms')
+      .select('user_id')
+      .eq('id', bundlePay.registration_id)
+      .maybeSingle()
+    if (String(primaryRow?.user_id ?? '') !== userId) {
+      return jsonResponse({ code: 'FORBIDDEN', message: 'Not your registration' }, 403)
+    }
   }
 
   const recipient = String(registration.registrant_email ?? '').trim().toLowerCase()
