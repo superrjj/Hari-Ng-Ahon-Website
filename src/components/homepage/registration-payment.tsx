@@ -407,12 +407,13 @@ export function RegistrationPayment() {
   useEffect(() => {
     if (!registrationId || paymentState) return
     let cancelled = false
-    void supabase
-      .from('registration_forms')
-      .select('status')
-      .eq('id', registrationId)
-      .maybeSingle()
-      .then(({ data }) => {
+    void (async () => {
+      try {
+        const { data } = await supabase
+          .from('registration_forms')
+          .select('status')
+          .eq('id', registrationId)
+          .maybeSingle()
         if (cancelled) return
         const status = String(data?.status ?? '').toLowerCase()
         if (status === 'confirmed' || status === 'paid') {
@@ -421,8 +422,10 @@ export function RegistrationPayment() {
             { replace: true },
           )
         }
-      })
-      .catch(() => { /* ignore — let user see the payment page */ })
+      } catch {
+        /* ignore — let the user see the payment page */
+      }
+    })()
     return () => { cancelled = true }
   }, [navigate, registrationId, paymentState])
 
