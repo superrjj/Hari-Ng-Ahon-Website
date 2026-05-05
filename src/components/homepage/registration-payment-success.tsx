@@ -222,10 +222,7 @@ export function RegistrationPaymentSuccess() {
       ctx.fillStyle = '#475569'
       ctx.font = '700 16px Arial'
       ctx.fillText('BIB NUMBER', leftColX + 22, bibBoxTop + 36)
-      ctx.fillStyle = '#0f172a'
-      ctx.font = '900 64px Arial'
-      ctx.fillText(data.bibNumber, leftColX + 20, bibBoxTop + 96)
-      // REMOVED: category code label and value
+      // Bib digits drawn after async QR work — avoids intermittent blank bib in PNG/email when yields occur mid-render.
 
       const metaY = bibBoxTop + 120 + 32
       drawLabelValue('CATEGORY', data.category, leftColX, metaY, 420)
@@ -251,7 +248,7 @@ export function RegistrationPaymentSuccess() {
         margin: 1,
         color: { dark: '#111827', light: '#ffffff' },
       })
-      const qrImage = await loadImage(qrDataUrl)
+      const qrImage = await loadImage(qrDataUrl)  
 
       ctx.save()
       drawRoundedRect(ctx, qrCardX, qrCardY, qrCardWidth, qrCardHeight, 24)
@@ -267,15 +264,21 @@ export function RegistrationPaymentSuccess() {
 
       ctx.drawImage(qrImage, qrImgX, qrImgY, qrSize, qrSize)
 
+      const bibDisplay = String(data.bibNumber ?? '').trim()
+
       ctx.fillStyle = '#111827'
       ctx.font = '900 40px Arial'
-      const bibWidth = ctx.measureText(data.bibNumber).width
-      ctx.fillText(data.bibNumber, qrCardX + (qrCardWidth - bibWidth) / 2, qrTextTop + 28)
+      const bibWidthQr = ctx.measureText(bibDisplay).width
+      ctx.fillText(bibDisplay, qrCardX + (qrCardWidth - bibWidthQr) / 2, qrTextTop + 28)
 
       ctx.fillStyle = '#64748b'
       ctx.font = '600 15px Arial'
       const regWidth = ctx.measureText(data.verificationId).width
       ctx.fillText(data.verificationId, qrCardX + (qrCardWidth - regWidth) / 2, qrTextTop + 56)
+
+      ctx.fillStyle = '#0f172a'
+      ctx.font = '900 64px Arial'
+      ctx.fillText(bibDisplay, leftColX + 20, bibBoxTop + 96)
 
       const fileType = mimeType === 'image/png' ? 'image/png' : 'image/jpeg'
       return canvas.toDataURL(fileType, 0.92)
@@ -474,10 +477,10 @@ export function RegistrationPaymentSuccess() {
       try {
         setStorageUploadMessage('Saving your certificate to storage…')
         for (const row of snapshot) {
-          const url = next[row.registrationId]
           const bib = String(row.data.bibNumber ?? '').trim()
-          if (!url || !bib) continue
-          await uploadCertificatePngToStorage(row.registrationId, url, bib)
+          if (!bib) continue
+          const storageUrl = await renderCertificateToDataUrl(row.data, 'image/png')
+          await uploadCertificatePngToStorage(row.registrationId, storageUrl, bib)
         }
         if (mounted) setStorageUploadMessage(null)
       } catch (e) {
@@ -532,17 +535,16 @@ export function RegistrationPaymentSuccess() {
         let skippedAlready = 0
         let mailUnavailable = false
 
-        // Ensure all visible bundle previews are uploaded before the email call.
+        // Fresh render per row so storage matches DB bib immediately before Resend (avoids stale preview URLs).
         for (const regId of bundleIds) {
           const row = previewRows.find((r) => r.registrationId === regId)
-          const url = row ? bundleCertificatePreviewUrls[row.registrationId] : null
           const bib = String(row?.data?.bibNumber ?? '').trim()
-          if (url && bib) {
-            try {
-              await uploadCertificatePngToStorage(regId, url, bib)
-            } catch {
-              /* function will report CERT_NOT_UPLOADED for missing files */
-            }
+          if (!row || !bib) continue
+          try {
+            const storageUrl = await renderCertificateToDataUrl(row.data, 'image/png')
+            await uploadCertificatePngToStorage(regId, storageUrl, bib)
+          } catch {
+            /* edge returns CERT_NOT_UPLOADED if missing */
           }
         }
 
@@ -654,6 +656,7 @@ export function RegistrationPaymentSuccess() {
     previewRows,
     bundleCertificatePreviewUrls,
     uploadCertificatePngToStorage,
+    renderCertificateToDataUrl,
   ])
 
   return (
