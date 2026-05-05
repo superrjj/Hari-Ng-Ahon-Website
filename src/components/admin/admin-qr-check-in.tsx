@@ -112,14 +112,55 @@ function RiderKitDetailRows({ result }: { result: ScanResult }) {
 const DUPLICATE_SCAN_SUMMARY =
   'This participant has already completed race kit claim for this registration. A second kit should not be issued without authorization from race control.'
 
+/** Shape matches rows returned by adminModulesApi.qrDashboard() scans list. */
+async function enrichQrCheckinScanRow(scan: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const registrationId = String(scan.registration_id ?? '')
+  const [{ data: rider }, { data: registration }] = await Promise.all([
+    supabase
+      .from('registration_rider_details')
+      .select('first_name, last_name, discipline, age_category')
+      .eq('registration_id', registrationId)
+      .maybeSingle(),
+    supabase.from('registration_forms').select('id, event_id').eq('id', registrationId).maybeSingle(),
+  ])
+  const riderName = [rider?.first_name, rider?.last_name].filter(Boolean).join(' ').trim() || 'Registered rider'
+  let eventType = '—'
+  let eventTitle = 'Current event'
+  if (registration?.event_id) {
+    const { data: event } = await supabase
+      .from('events')
+      .select('title, race_type')
+      .eq('id', registration.event_id)
+      .maybeSingle()
+    eventType = String(event?.race_type ?? '—')
+    eventTitle = String(event?.title ?? 'Current event')
+  }
+  return {
+    ...scan,
+    rider_name: riderName,
+    discipline: String(rider?.discipline ?? '—'),
+    category: String(rider?.age_category ?? '—'),
+    event_type: eventType,
+    event_title: eventTitle,
+  }
+}
+
 export function AdminQrCheckIn() {
-  const [reloadKey, setReloadKey] = useState(0)
-  const { data, loading, error } = useModuleLoader(() => adminModulesApi.qrDashboard(), [reloadKey])
+  const { data, loading, error } = useModuleLoader(() => adminModulesApi.qrDashboard(), [])
+
+  /** Keeps history in sync without refetching the whole module (avoids loading shell unmounting the camera). */
+  const [scanHistoryRows, setScanHistoryRows] = useState<Array<Record<string, unknown>>>([])
+
+  useEffect(() => {
+    if (data?.scans) {
+      setScanHistoryRows(data.scans as Array<Record<string, unknown>>)
+    }
+  }, [data?.scans])
 
   const [entryLabelByRegistrationId, setEntryLabelByRegistrationId] = useState<Record<string, string>>({})
 
   useEffect(() => {
-    const scans = data?.scans ?? []
+    const scans = scanHistoryRows
     const ids = Array.from(
       new Set(scans.map((s) => String((s as { registration_id?: string }).registration_id ?? '')).filter(Boolean)),
     )
@@ -144,15 +185,32 @@ export function AdminQrCheckIn() {
     return () => {
       cancelled = true
     }
-  }, [data?.scans])
+  }, [scanHistoryRows])
 
   useEffect(() => {
     const channel = supabase
       .channel('admin-qr-checkins')
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'qr_checkins' },
-        () => setReloadKey((k) => k + 1),
+        { event: 'INSERT', schema: 'public', table: 'qr_checkins' },
+        async (payload) => {
+          const raw = payload.new as Record<string, unknown> | null
+          if (!raw?.id) return
+          try {
+            const enriched = await enrichQrCheckinScanRow(raw)
+            setScanHistoryRows((prev) => {
+              const id = String(enriched.id ?? '')
+              const withoutDup = prev.filter((r) => String(r.id) !== id)
+              const next = [enriched, ...withoutDup].sort(
+                (a, b) =>
+                  new Date(String(b.scanned_at ?? 0)).getTime() - new Date(String(a.scanned_at ?? 0)).getTime(),
+              )
+              return next.slice(0, 15)
+            })
+          } catch (e) {
+            console.error('[admin-qr-checkins] realtime enrich failed', e)
+          }
+        },
       )
       .subscribe()
     return () => {
@@ -406,8 +464,6 @@ export function AdminQrCheckIn() {
     }
   }, [startCamera])
 
-  const historyRows = useMemo(() => data?.scans ?? [], [data?.scans])
-
   const tableEventTypeDisplay = useCallback(
     (row: Record<string, unknown>) => {
       const rid = String(row.registration_id ?? '')
@@ -419,8 +475,8 @@ export function AdminQrCheckIn() {
 
   const filteredHistoryRows = useMemo(() => {
     const query = historySearch.trim().toLowerCase()
-    if (!query) return historyRows
-    return historyRows.filter((row) => {
+    if (!query) return scanHistoryRows
+    return scanHistoryRows.filter((row) => {
       const r = row as Record<string, unknown>
       const haystack = [
         String(r.scanned_code ?? ''),
@@ -435,7 +491,7 @@ export function AdminQrCheckIn() {
         .toLowerCase()
       return haystack.includes(query)
     })
-  }, [historyRows, historySearch, tableEventTypeDisplay])
+  }, [scanHistoryRows, historySearch, tableEventTypeDisplay])
 
   const handleClaimKit = useCallback(async () => {
     if (!scanResult || scanResult.status !== 'valid' || !scanResult.registrationId || !scanResult.eventId) return
@@ -490,7 +546,6 @@ export function AdminQrCheckIn() {
       toast.success('Race kit successfully claimed.')
       setClaimDialogOpen(false)
       setScanResult(null)
-      setReloadKey((value) => value + 1)
     } catch (claimError) {
       toast.error((claimError as Error).message || 'Failed to claim race kit.')
     } finally {

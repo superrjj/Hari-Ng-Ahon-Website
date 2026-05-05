@@ -1,5 +1,5 @@
 import QRCode from 'qrcode'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { supabase } from '../../lib/supabase'
@@ -68,11 +68,12 @@ export function RegistrationPaymentSuccess() {
     Array<{ registrationId: string; data: RegistrationCertificateData }>
   >([])
 
+  /** Prevents duplicate Resend calls when React Strict Mode runs the effect twice or deps settle twice before localStorage updates. */
+  const certEmailInvokeLockRef = useRef(false)
+
   const uploadCertificatePngToStorage = useCallback(
     async (rid: string, dataUrl: string, bibNumber: string) => {
       if (!CERT_BUCKET) throw new Error('Missing VITE_CERT_BUCKET (certificate storage bucket name).')
-      const key = `cert-storage-uploaded:${rid}`
-      if (window.localStorage.getItem(key) === '1') return
       const blob = await dataUrlToBlob(dataUrl)
       const path = certObjectPath(rid, bibNumber)
       const { error } = await supabase.storage.from(CERT_BUCKET).upload(path, blob, {
@@ -81,7 +82,6 @@ export function RegistrationPaymentSuccess() {
         cacheControl: '31536000',
       })
       if (error) throw error
-      window.localStorage.setItem(key, '1')
     },
     [],
   )
@@ -433,16 +433,28 @@ export function RegistrationPaymentSuccess() {
     return []
   }, [bundleCertificateRows, certificateData, registrationId])
 
+  /** Every checkout line has a bib and a PNG rendered from that same row (avoids stale canvas + new bib races). */
+  const registrationsReadyForCertEmail = useMemo(() => {
+    if (!certificateData?.isPaid || !certificateData.registrantEmail?.trim()) return false
+    if (previewRows.length === 0) return false
+    return previewRows.every((row) => {
+      const bib = String(row.data.bibNumber ?? '').trim()
+      const url = bundleCertificatePreviewUrls[row.registrationId]
+      return Boolean(bib && url)
+    })
+  }, [certificateData, previewRows, bundleCertificatePreviewUrls])
+
   useEffect(() => {
     if (previewRows.length === 0) {
       setBundleCertificatePreviewUrls({})
       return
     }
     let mounted = true
+    const snapshot = previewRows
     void (async () => {
       const next: Record<string, string | null> = {}
       await Promise.all(
-        previewRows.map(async ({ registrationId: rid, data }) => {
+        snapshot.map(async ({ registrationId: rid, data }) => {
           try {
             next[rid] = await renderCertificateToDataUrl(data, 'image/png')
           } catch {
@@ -450,47 +462,35 @@ export function RegistrationPaymentSuccess() {
           }
         }),
       )
-      if (mounted) setBundleCertificatePreviewUrls(next)
-    })()
-    return () => {
-      mounted = false
-    }
-  }, [previewRows, renderCertificateToDataUrl])
+      if (!mounted) return
+      setBundleCertificatePreviewUrls(next)
 
-  // Upload the *client-rendered* PNG to Storage after payment is confirmed.
-  useEffect(() => {
-    if (!certificateData?.isPaid) return
-    if (!session?.access_token) return
-    if (!CERT_BUCKET) {
-      setStorageUploadMessage('Certificate storage is not configured (VITE_CERT_BUCKET).')
-      return
-    }
-    if (previewRows.length === 0) return
-
-    let active = true
-    void (async () => {
+      // Upload immediately using the same snapshot + PNGs so storage always matches on-screen pixels (dynamic bibs).
+      if (!certificateData?.isPaid || !session?.access_token) return
+      if (!CERT_BUCKET) {
+        if (mounted) setStorageUploadMessage('Certificate storage is not configured (VITE_CERT_BUCKET).')
+        return
+      }
       try {
         setStorageUploadMessage('Saving your certificate to storage…')
-        for (const row of previewRows) {
-          const url = bundleCertificatePreviewUrls[row.registrationId]
+        for (const row of snapshot) {
+          const url = next[row.registrationId]
           const bib = String(row.data.bibNumber ?? '').trim()
           if (!url || !bib) continue
           await uploadCertificatePngToStorage(row.registrationId, url, bib)
         }
-        if (active) setStorageUploadMessage(null)
+        if (mounted) setStorageUploadMessage(null)
       } catch (e) {
-        if (!active) return
-        setStorageUploadMessage((e as Error).message || 'Failed to save certificate to storage.')
+        if (mounted) setStorageUploadMessage((e as Error).message || 'Failed to save certificate to storage.')
       }
     })()
-
     return () => {
-      active = false
+      mounted = false
     }
   }, [
-    bundleCertificatePreviewUrls,
-    certificateData?.isPaid,
     previewRows,
+    renderCertificateToDataUrl,
+    certificateData?.isPaid,
     session?.access_token,
     uploadCertificatePngToStorage,
   ])
@@ -498,32 +498,36 @@ export function RegistrationPaymentSuccess() {
   useEffect(() => {
     let active = true
     async function sendRaceClaimCertificateEmail() {
-      if (!certificateData?.isPaid || !certificateData.registrantEmail?.trim()) return
-      if (!certificateData.bibNumber?.trim()) return
+      if (!registrationsReadyForCertEmail || !certificateData) return
 
-      const { data: sess } = await supabase.auth.getSession()
-      const token = sess.session?.access_token
-      if (!token) return
-
-      let bundleIds: string[] = [certificateData.registrationId]
-      try {
-        bundleIds = await registrationService.listCheckoutBundleRegistrationIds(certificateData.registrationId)
-      } catch {
-        bundleIds = [certificateData.registrationId]
-      }
-
-      const allDeduped = bundleIds.every((id) => window.localStorage.getItem(`cert-email-sent:${id}`) === '1')
-      if (allDeduped) {
-        if (!active) return
-        setAutoEmailMessage(
-          bundleIds.length > 1
-            ? 'Your QR Code Race Claim Kit certificates were already sent to your email.'
-            : 'Your QR Code Race Claim Kit was already sent to your email.',
-        )
-        return
-      }
+      if (certEmailInvokeLockRef.current) return
+      certEmailInvokeLockRef.current = true
 
       try {
+        const { data: sess } = await supabase.auth.getSession()
+        const token = sess.session?.access_token
+        if (!token) return
+
+        let bundleIds: string[] = [certificateData.registrationId]
+        try {
+          bundleIds = await registrationService.listCheckoutBundleRegistrationIds(certificateData.registrationId)
+        } catch {
+          bundleIds = [certificateData.registrationId]
+        }
+
+        const allDeduped = bundleIds.every((id) => window.localStorage.getItem(`cert-email-sent:${id}`) === '1')
+        if (allDeduped) {
+          if (active) {
+            setAutoEmailMessage(
+              bundleIds.length > 1
+                ? 'Your QR Code Race Claim Kit certificates were already sent to your email.'
+                : 'Your QR Code Race Claim Kit was already sent to your email.',
+            )
+          }
+          return
+        }
+
+        try {
         let sentCount = 0
         let skippedAlready = 0
         let mailUnavailable = false
@@ -547,7 +551,6 @@ export function RegistrationPaymentSuccess() {
           headers: { Authorization: `Bearer ${token}` },
           body: { registrationId: primaryId, registrationIds: bundleIds },
         })
-        if (!active) return
 
         if (error) {
           if (await reloadPageIfSessionExpiredInvokeError(error, '')) {
@@ -557,13 +560,14 @@ export function RegistrationPaymentSuccess() {
           if (raw.toLowerCase().includes('resend') || raw.includes('503')) {
             mailUnavailable = true
           }
-          if (!mailUnavailable) {
-            setAutoEmailMessage('Could not send every certificate email yet (files may still be uploading). Use Refresh.')
-          }
-          if (mailUnavailable) {
-            setAutoEmailMessage(
-              'Certificate email is not available yet (mail not configured). You can download your certificate below.',
-            )
+          if (active) {
+            if (!mailUnavailable) {
+              setAutoEmailMessage('Could not send every certificate email yet (files may still be uploading). Use Refresh.')
+            } else {
+              setAutoEmailMessage(
+                'Certificate email is not available yet (mail not configured). You can download your certificate below.',
+              )
+            }
           }
           return
         }
@@ -582,7 +586,7 @@ export function RegistrationPaymentSuccess() {
           if (String(payload.error).includes('RESEND_API_KEY') || detail.includes('resend')) {
             mailUnavailable = true
           }
-          if (mailUnavailable) {
+          if (active && mailUnavailable) {
             setAutoEmailMessage(
               'Certificate email is not available yet (mail not configured). You can download your certificate below.',
             )
@@ -597,52 +601,60 @@ export function RegistrationPaymentSuccess() {
         }
         skippedAlready = bundleIds.filter((id) => window.localStorage.getItem(`cert-email-sent:${id}`) === '1').length
 
-        if (!active) return
-
-        if (mailUnavailable) {
-          setAutoEmailMessage(
-            'Certificate email is not available yet (mail not configured). You can download your certificate below.',
-          )
-          return
-        }
-
         if (sentCount > 0) {
-          if (sentCount < bundleIds.length) {
-            setAutoEmailMessage(
-              `${sentCount} of ${bundleIds.length} certificates were attached and sent in one email. Tap Refresh / assign bib after each line has a bib.`,
-            )
-          } else if (bundleIds.length > 1) {
-            setAutoEmailMessage(
-              `${sentCount} QR Code Race Claim Kit certificates were sent to your email in one email.`,
-            )
-          } else {
-            setAutoEmailMessage('Your QR Code Race Claim Kit certificate was sent to your email.')
+          if (active) {
+            if (sentCount < bundleIds.length) {
+              setAutoEmailMessage(
+                `${sentCount} of ${bundleIds.length} certificates were attached and sent in one email. Tap Refresh / assign bib after each line has a bib.`,
+              )
+            } else if (bundleIds.length > 1) {
+              setAutoEmailMessage(
+                `${sentCount} QR Code Race Claim Kit certificates were sent to your email in one email.`,
+              )
+            } else {
+              setAutoEmailMessage('Your QR Code Race Claim Kit certificate was sent to your email.')
+            }
           }
           return
         }
 
         if (skippedAlready >= bundleIds.length) {
-          setAutoEmailMessage(
-            bundleIds.length > 1
-              ? 'Your QR Code Race Claim Kit certificates were already sent to your email.'
-              : 'Your QR Code Race Claim Kit was already sent to your email.',
-          )
+          if (active) {
+            setAutoEmailMessage(
+              bundleIds.length > 1
+                ? 'Your QR Code Race Claim Kit certificates were already sent to your email.'
+                : 'Your QR Code Race Claim Kit was already sent to your email.',
+            )
+          }
           return
         }
 
-        setAutoEmailMessage(
-          'Could not send every certificate email yet (bibs may still be assigning). You can download below or use Refresh.',
-        )
-      } catch {
-        if (!active) return
-        setAutoEmailMessage('Certificate email failed to send. Please download your certificate below or contact support.')
+        if (active) {
+          setAutoEmailMessage(
+            'Could not send every certificate email yet (bibs may still be assigning). You can download below or use Refresh.',
+          )
+        }
+        } catch {
+          if (active) {
+            setAutoEmailMessage('Certificate email failed to send. Please download your certificate below or contact support.')
+          }
+        }
+      } finally {
+        certEmailInvokeLockRef.current = false
       }
     }
     void sendRaceClaimCertificateEmail()
     return () => {
       active = false
     }
-  }, [certificateData, session?.access_token])
+  }, [
+    registrationsReadyForCertEmail,
+    certificateData,
+    session?.access_token,
+    previewRows,
+    bundleCertificatePreviewUrls,
+    uploadCertificatePngToStorage,
+  ])
 
   return (
     <section className="bg-white px-4 py-10 text-slate-900">
@@ -714,8 +726,8 @@ export function RegistrationPaymentSuccess() {
 
           {error ? <p className="mt-3 text-sm text-rose-600">{error}</p> : null}
 
-          {/* Shimmer skeleton — shown while data loads or QR preview is being generated */}
-          {(loading || (!certificateData && !error)) ? (
+          {/* Shimmer skeleton — initial fetch only; keep cert visible during refresh while bib syncs */}
+          {((loading && !certificateData) || (!certificateData && !error)) ? (
             <div className="mt-4 space-y-3 animate-pulse">
               <div className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 sm:grid-cols-2">
                 <div className="h-4 w-32 rounded bg-slate-200" />
