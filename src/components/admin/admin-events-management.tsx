@@ -41,12 +41,16 @@ interface ExtraFormState {
 
 type AdminEventRow = Record<string, unknown>
 
+type CategoryGenderEligibility = 'all' | 'male' | 'female'
+
 interface DisciplineCategory {
   id: string
   name: string
   code: string
   riderLimit: string
   active: boolean
+  /** Stored as race_categories.gender_eligibility */
+  genderEligibility: CategoryGenderEligibility
 }
 
 interface Discipline {
@@ -544,7 +548,14 @@ function Step2({
             ...d,
             categories: [
               ...d.categories,
-              { id: crypto.randomUUID(), name: '', code: '', riderLimit: '', active: true },
+              {
+                id: crypto.randomUUID(),
+                name: '',
+                code: '',
+                riderLimit: '',
+                active: true,
+                genderEligibility: 'all',
+              },
             ],
           },
       ),
@@ -656,7 +667,7 @@ function Step2({
                   : disc.categories.slice(0, CATEGORY_PREVIEW_LIMIT)
                 ).map((cat) => (
                   <div key={cat.id} className="rounded-lg border border-slate-200 bg-white p-3">
-                    <div className="grid grid-cols-3 gap-3">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
                       <label>
                         <p className="mb-1 text-[10px] font-medium text-slate-500">
                           Category Name <span className="text-red-500">*</span>
@@ -686,6 +697,22 @@ function Step2({
                           value={cat.riderLimit}
                           onChange={(e) => updateCategoryInDiscipline(disc.id, cat.id, { riderLimit: e.target.value })}
                         />
+                      </label>
+                      <label>
+                        <p className="mb-1 text-[10px] font-medium text-slate-500">Eligibility</p>
+                        <select
+                          className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                          value={cat.genderEligibility}
+                          onChange={(e) =>
+                            updateCategoryInDiscipline(disc.id, cat.id, {
+                              genderEligibility: e.target.value as CategoryGenderEligibility,
+                            })
+                          }
+                        >
+                          <option value="all">All genders</option>
+                          <option value="male">Male only</option>
+                          <option value="female">Female only</option>
+                        </select>
                       </label>
                     </div>
 
@@ -1225,7 +1252,7 @@ function CreateEventModal({
     try {
       const { data, error } = await supabase
         .from('race_categories')
-        .select('id, discipline, category_name, code, rider_limit, active')
+        .select('id, discipline, category_name, code, rider_limit, active, gender_eligibility')
         .eq('event_id', eventId)
 
       if (error) throw error
@@ -1241,6 +1268,9 @@ function CreateEventModal({
         const riderLimitValue = row.rider_limit ?? 0
         const active = row.active === undefined ? true : Boolean(row.active)
         const categoryId = String(row.id ?? crypto.randomUUID())
+        const geRaw = String(row.gender_eligibility ?? 'all').toLowerCase()
+        const genderEligibility: CategoryGenderEligibility =
+          geRaw === 'male' || geRaw === 'female' ? geRaw : 'all'
 
         if (!grouped.has(disciplineName)) {
           grouped.set(disciplineName, { id: crypto.randomUUID(), name: disciplineName, categories: [] })
@@ -1253,6 +1283,7 @@ function CreateEventModal({
           code: String(row.code ?? ''),
           riderLimit: String(riderLimitValue ?? ''),
           active,
+          genderEligibility,
         })
       }
 
@@ -1428,6 +1459,7 @@ function CreateEventModal({
             code: c.code.trim() ? c.code.trim() : null,
             rider_limit: c.riderLimit.trim() ? Number(c.riderLimit) : null,
             active: c.active,
+            gender_eligibility: c.genderEligibility ?? 'all',
           })),
         )
 

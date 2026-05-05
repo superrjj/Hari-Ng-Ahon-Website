@@ -12,6 +12,8 @@ interface EventType {
   name: string
 }
 
+type GenderEligibility = 'all' | 'male' | 'female'
+
 interface RaceCategory {
   id: string
   discipline: string
@@ -19,6 +21,7 @@ interface RaceCategory {
   code: string
   rider_limit: number | null
   active: boolean
+  gender_eligibility?: GenderEligibility | string | null
 }
 
 interface DisciplineGroup {
@@ -112,6 +115,79 @@ function formatSlug(slug: string): string {
     .split(/[-_]/)
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
     .join(' ')
+}
+
+function normalizeGenderEligibility(raw: unknown): GenderEligibility {
+  const s = String(raw ?? 'all').toLowerCase()
+  if (s === 'male' || s === 'female') return s
+  return 'all'
+}
+
+/**
+ * Admin column wins. If still "all", infer only obvious open women's / men's class names so
+ * legacy rows work before every category has Eligibility set — avoids showing Youth/Masters/etc.
+ * to female riders when only "Open Female" should apply.
+ */
+function effectiveGenderEligibility(cat: RaceCategory): GenderEligibility {
+  const fromDb = normalizeGenderEligibility(cat.gender_eligibility)
+  if (fromDb !== 'all') return fromDb
+  const name = String(cat.category_name ?? '')
+  if (/\bopen\s*female\b/i.test(name) || /\bwomen'?s?\s+open\b/i.test(name) || /\bladies\s+open\b/i.test(name)) {
+    return 'female'
+  }
+  if (/\bopen\s*male\b/i.test(name)) return 'male'
+  return 'all'
+}
+
+/** Uses race_categories.gender_eligibility plus conservative name inference when DB is still "all". */
+function categoryMatchesRiderGender(cat: RaceCategory, riderGender: string): boolean {
+  const rule = effectiveGenderEligibility(cat)
+  if (rule === 'all') return true
+  const g = riderGender.trim().toLowerCase()
+  if (rule === 'female') return g === 'female'
+  if (rule === 'male') return g === 'male'
+  return true
+}
+
+function nameLooksLikeWomenCategory(name: string): boolean {
+  const n = String(name ?? '')
+  if (/\bopen\s*female\b/i.test(n) || /\bwomen'?s?\s+open\b/i.test(n) || /\bladies\s+open\b/i.test(n)) return true
+  if (/\bfemale\b/i.test(n) && /\bopen\b/i.test(n)) return true
+  return false
+}
+
+/** When DB still has "all" on age/open rows, treat as men's field for filtering (no "female" in name). */
+function nameLooksLikeMenOnlyAgeOrOpen(name: string): boolean {
+  const n = String(name ?? '')
+  if (nameLooksLikeWomenCategory(n)) return false
+  if (AGE_PATTERNS.some((re) => re.test(n))) return true
+  if (/\bopen\s*\/\s*elite\b/i.test(n)) return true
+  if (/\b(mtb|road|gravel)\s+open\b/i.test(n)) return true
+  if (/\bopen\s*elite\b/i.test(n)) return true
+  return false
+}
+
+function disciplineHasFemaleSpecificCategory(categories: RaceCategory[]): boolean {
+  return categories.some((c) => effectiveGenderEligibility(c) === 'female')
+}
+
+/**
+ * DB eligibility first; for female riders, if this discipline also defines a women's class,
+ * hide legacy `all` rows that look like men's age brackets or generic open/elite (auto-hide without editing every row).
+ */
+function categoryMatchesRiderGenderInDiscipline(
+  cat: RaceCategory,
+  riderGender: string,
+  allInDiscipline: RaceCategory[],
+): boolean {
+  if (!categoryMatchesRiderGender(cat, riderGender)) return false
+  const g = riderGender.trim().toLowerCase()
+  if (g !== 'female') return true
+  if (!disciplineHasFemaleSpecificCategory(allInDiscipline)) return true
+  if (effectiveGenderEligibility(cat) !== 'all') return true
+  if (nameLooksLikeWomenCategory(cat.category_name)) return true
+  if (nameLooksLikeMenOnlyAgeOrOpen(cat.category_name)) return false
+  return true
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
@@ -264,7 +340,7 @@ export function RegistrationForm() {
       try {
         const { data, error: err } = await supabase
           .from('race_categories')
-          .select('id, discipline, category_name, code, rider_limit, active')
+          .select('id, discipline, category_name, code, rider_limit, active, gender_eligibility')
           .eq('event_id', selectedEvent.id)
           .eq('active', true)
 
@@ -299,16 +375,64 @@ export function RegistrationForm() {
     return () => { active = false }
   }, [selectedEvent?.id])
 
-  // The categories available for the currently selected discipline
+  /**
+   * After gender is chosen, only disciplines that have ≥1 matching category appear,
+   * and each discipline lists only categories allowed for that gender (all / male / female).
+   */
+  const disciplineGroupsForRider = useMemo(() => {
+    if (!form.gender.trim()) return []
+    return disciplineGroups
+      .map((g) => ({
+        discipline: g.discipline,
+        categories: g.categories.filter((c) => categoryMatchesRiderGenderInDiscipline(c, form.gender, g.categories)),
+      }))
+      .filter((g) => g.categories.length > 0)
+  }, [disciplineGroups, form.gender])
+
   const currentDisciplineGroup = useMemo(
-    () => disciplineGroups.find((g) => g.discipline === form.discipline) ?? null,
-    [disciplineGroups, form.discipline],
+    () => disciplineGroupsForRider.find((g) => g.discipline === form.discipline) ?? null,
+    [disciplineGroupsForRider, form.discipline],
   )
 
+  /** Same as categories in the visible discipline (already filtered by gender when gender is set). */
+  const categoriesEligibleForRider = useMemo(
+    () => currentDisciplineGroup?.categories ?? [],
+    [currentDisciplineGroup],
+  )
+
+  /** Keep discipline in sync when gender hides the current tab (e.g. male-only MTB no longer listed for Female). */
+  useEffect(() => {
+    if (!form.gender.trim()) return
+    const visible = disciplineGroupsForRider
+    if (visible.length === 0) {
+      setForm((p) => (p.discipline ? { ...p, discipline: '' } : p))
+      setSelectedCategoryIds([])
+      return
+    }
+    if (!visible.some((g) => g.discipline === form.discipline)) {
+      setForm((p) => ({ ...p, discipline: visible[0].discipline }))
+      setSelectedCategoryIds([])
+    }
+  }, [form.gender, disciplineGroupsForRider, form.discipline])
+
   const selectedCategoryIdsInDiscipline = useMemo(() => {
-    const allowed = new Set((currentDisciplineGroup?.categories ?? []).map((c) => c.id))
+    const allowed = new Set(categoriesEligibleForRider.map((c) => c.id))
     return selectedCategoryIds.filter((id) => allowed.has(id))
-  }, [currentDisciplineGroup, selectedCategoryIds])
+  }, [categoriesEligibleForRider, selectedCategoryIds])
+
+  useEffect(() => {
+    if (!form.gender.trim()) return
+    setSelectedCategoryIds((prev) => {
+      const eligible = new Set(categoriesEligibleForRider.map((c) => c.id))
+      return prev.filter((id) => eligible.has(id))
+    })
+  }, [form.gender, categoriesEligibleForRider])
+
+  useEffect(() => {
+    if (categoriesEligibleForRider.length !== 1 || !form.gender.trim()) return
+    const only = categoriesEligibleForRider[0]
+    setSelectedCategoryIds([only.id])
+  }, [categoriesEligibleForRider, form.gender])
 
   const totalFee = useMemo(
     () =>
@@ -319,21 +443,21 @@ export function RegistrationForm() {
   )
 
   const currentCategoryNames = useMemo(
-    () => (currentDisciplineGroup?.categories ?? []).map((c) => c.category_name),
-    [currentDisciplineGroup],
+    () => categoriesEligibleForRider.map((c) => c.category_name),
+    [categoriesEligibleForRider],
   )
   const selectedCategoryLabels = useMemo(() => {
-    const cats = currentDisciplineGroup?.categories ?? []
+    const cats = categoriesEligibleForRider
     return selectedCategoryIdsInDiscipline
       .map((id) => cats.find((c) => c.id === id)?.category_name)
       .filter(Boolean) as string[]
-  }, [currentDisciplineGroup, selectedCategoryIdsInDiscipline])
+  }, [categoriesEligibleForRider, selectedCategoryIdsInDiscipline])
 
   const primaryCategoryForRider = useMemo(() => {
-    const cats = currentDisciplineGroup?.categories ?? []
+    const cats = categoriesEligibleForRider
     const firstId = selectedCategoryIdsInDiscipline[0]
     return firstId ? cats.find((c) => c.id === firstId) ?? null : null
-  }, [currentDisciplineGroup, selectedCategoryIdsInDiscipline])
+  }, [categoriesEligibleForRider, selectedCategoryIdsInDiscipline])
 
   // Does this discipline have age-graded categories (Youth / Junior / Masters)?
   const hasAgeCategories = useMemo(
@@ -365,7 +489,13 @@ export function RegistrationForm() {
     if (!form.contactNumber) errors.contactNumber = 'Contact number is required.'
     if (!form.emergencyContactName) errors.emergencyContactName = 'Emergency contact name is required.'
     if (!form.emergencyContactNumber) errors.emergencyContactNumber = 'Emergency contact number is required.'
-    if (selectedCategoryIdsInDiscipline.length === 0) errors.category = 'Please select at least one category.'
+    if (form.gender.trim() && disciplineGroupsForRider.length === 0) {
+      errors.category = 'No disciplines or categories match your gender for this event. Contact the organizer.'
+    } else if (form.gender.trim() && categoriesEligibleForRider.length === 0) {
+      errors.category = 'No categories are available for your gender in this discipline. Contact the organizer.'
+    } else if (selectedCategoryIdsInDiscipline.length === 0) {
+      errors.category = 'Please select at least one category.'
+    }
     if (!shirtSize) errors.shirtSize = 'Please select a shirt size.'
     if (!selectedEvent) errors.event = 'Please select an event.'
     if (selectedEventTypeSlugs.length === 0) errors.eventTypes = 'Please select at least one event type.'
@@ -384,7 +514,7 @@ export function RegistrationForm() {
       const raceTypeLabel = eventEntries.map((e) => e.label).join(', ')
       const checkoutBundleId = globalThis.crypto?.randomUUID?.() ?? `bundle-${Date.now()}`
 
-      const cats = currentDisciplineGroup?.categories ?? []
+      const cats = categoriesEligibleForRider
       const checkoutLines: RegistrationCheckoutLine[] = selectedEventTypeSlugs.flatMap((slug) =>
         selectedCategoryIdsInDiscipline.map((raceCategoryId) => {
           const cat = cats.find((c) => c.id === raceCategoryId)
@@ -623,6 +753,12 @@ export function RegistrationForm() {
             <p className="mt-0.5 text-xs text-slate-500">
               *The organizers reserve the right to merge categories with less than 10 participants.
             </p>
+            {!form.gender.trim() ? (
+              <p className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                Select your <strong>gender</strong> first — only disciplines and categories that match eligibility will
+                appear.
+              </p>
+            ) : null}
           </div>
 
           {categoriesLoading ? (
@@ -641,14 +777,23 @@ export function RegistrationForm() {
             </div>
           ) : disciplineGroups.length === 0 ? (
             <p className="text-xs text-rose-600">No categories configured for this event.</p>
+          ) : !form.gender.trim() ? (
+            <p className="mt-1 text-xs text-slate-500">
+              Choose your gender above — categories filter automatically by eligibility (male / female / all).
+            </p>
+          ) : disciplineGroupsForRider.length === 0 ? (
+            <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-950">
+              No disciplines or categories are available for <strong>{form.gender}</strong> for this event. Please contact
+              the organizer.
+            </p>
           ) : (
             <div className="space-y-4">
-              {/* ── Discipline tab-pills ─────────────────────────────────── */}
-              {disciplineGroups.length > 1 && (
+              {/* ── Discipline tab-pills (filtered by gender eligibility once gender is chosen) ─ */}
+              {disciplineGroupsForRider.length > 1 && (
                 <div className="space-y-1.5">
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Discipline</p>
                   <div className="flex flex-wrap gap-2">
-                    {disciplineGroups.map((g) => {
+                    {disciplineGroupsForRider.map((g) => {
                       const active = form.discipline === g.discipline
                       return (
                         <button
@@ -656,7 +801,7 @@ export function RegistrationForm() {
                           type="button"
                           onClick={() => {
                             setForm((p) => ({ ...p, discipline: g.discipline }))
-                            const nextGroup = disciplineGroups.find((d) => d.discipline === g.discipline)
+                            const nextGroup = disciplineGroupsForRider.find((d) => d.discipline === g.discipline)
                             const allowed = new Set((nextGroup?.categories ?? []).map((c) => c.id))
                             setSelectedCategoryIds((prev) => prev.filter((id) => allowed.has(id)))
                           }}
@@ -678,11 +823,11 @@ export function RegistrationForm() {
                 </div>
               )}
 
-              {/* Single discipline: show name as static label */}
-              {disciplineGroups.length === 1 && (
+              {/* Single visible discipline: show name as static label */}
+              {disciplineGroupsForRider.length === 1 && (
                 <div className="flex items-center gap-2">
                   <span className="inline-flex items-center rounded-full border border-[#cfae3f] bg-[#fff6d6] px-3 py-1 text-sm font-semibold text-slate-800">
-                    {disciplineGroups[0].discipline}
+                    {disciplineGroupsForRider[0].discipline}
                   </span>
                 </div>
               )}
@@ -690,13 +835,37 @@ export function RegistrationForm() {
               {/* ── Category grid ────────────────────────────────────────── */}
               <div className="space-y-1.5">
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Age / Class Category <span className="text-rose-500 normal-case font-normal tracking-normal">*</span>
+                  {hasAgeCategories ? (
+                    <>
+                      Age / Class Category{' '}
+                      <span className="text-rose-500 normal-case font-normal tracking-normal">*</span>
+                    </>
+                  ) : (
+                    <>
+                      Race category{' '}
+                      <span className="text-rose-500 normal-case font-normal tracking-normal">*</span>
+                    </>
+                  )}
                 </p>
+                {form.gender.trim().toLowerCase() === 'female' &&
+                !hasAgeCategories &&
+                categoriesEligibleForRider.length > 0 ? (
+                  <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-relaxed text-slate-700">
+                    There are <strong>no separate age brackets</strong> for your selection — choose your{' '}
+                    <strong>women’s / open class</strong> below (same for every event type you pick).
+                  </p>
+                ) : null}
+                {form.gender && categoriesEligibleForRider.length === 0 ? (
+                  <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+                    No categories are set up for <strong>{form.gender}</strong> in this discipline. Choose another
+                    discipline or contact registration.
+                  </p>
+                ) : null}
                 <div
                   className={`grid grid-cols-1 gap-2 sm:grid-cols-2 rounded-xl border p-3 ${fieldErrors.category ? 'border-rose-400 bg-rose-50/40' : 'border-slate-200 bg-slate-50/60'
                     }`}
                 >
-                  {currentDisciplineGroup?.categories.map((cat) => {
+                  {categoriesEligibleForRider.map((cat) => {
                     const checked = selectedCategoryIds.includes(cat.id)
                     return (
                       <button
@@ -741,7 +910,7 @@ export function RegistrationForm() {
             </div>
           )}
 
-          {/* Age-based category suggestion — only shown for age-graded disciplines */}
+          {/* Age-based suggestion — only when eligible list includes age-graded category names */}
           {hasAgeCategories && form.birthDate && suggestedAgeCategory && (
             <div className="flex flex-col gap-2 rounded-xl border border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50 px-4 py-3.5">
               <div className="flex items-start gap-2.5">
@@ -760,7 +929,7 @@ export function RegistrationForm() {
                   <button
                     type="button"
                     onClick={() => {
-                      const match = (currentDisciplineGroup?.categories ?? []).find((cat) => cat.category_name === suggestedAgeCategory)
+                      const match = categoriesEligibleForRider.find((cat) => cat.category_name === suggestedAgeCategory)
                       if (match) setSelectedCategoryIds([match.id])
                     }}
                     className="inline-flex items-center gap-1.5 rounded-lg bg-blue-700 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-blue-800 transition"
