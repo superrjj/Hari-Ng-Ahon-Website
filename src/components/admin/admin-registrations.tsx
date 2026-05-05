@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { adminApi, type AdminRegistrationRow } from '../../services/adminApi'
 import { supabase } from '../../lib/supabase'
-import { AlertTriangle, CalendarDays, CheckCircle2, Printer, Search, ShieldX, Users } from 'lucide-react'
+import { AlertTriangle, CalendarDays, Check, CheckCircle2, Copy, Printer, Search, ShieldX, Users } from 'lucide-react'
 
 function pill(status: string) {
   const s = status.toLowerCase()
@@ -47,6 +47,7 @@ export function AdminRegistrations() {
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [sortBy, setSortBy] = useState<'created_desc' | 'created_asc' | 'cyclist_asc' | 'cyclist_desc'>('created_desc')
   const [page, setPage] = useState(1)
+  const [copiedId, setCopiedId] = useState<string | null>(null)
 
   function fetchData() {
     return adminApi
@@ -142,6 +143,7 @@ export function AdminRegistrations() {
     }
     return dups
   }, [filtered])
+
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const currentPage = Math.min(page, totalPages)
   const startIndex = filtered.length === 0 ? 0 : (currentPage - 1) * PAGE_SIZE
@@ -257,7 +259,7 @@ export function AdminRegistrations() {
 
         {error ? <p className="px-4 py-3 text-sm text-rose-600">{error}</p> : null}
 
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto overflow-y-auto max-h-[600px]">
           <table className="min-w-[1320px] w-full text-left text-sm">
             <thead className="bg-slate-50 text-[10px] uppercase tracking-[0.08em] text-slate-500">
               <tr>
@@ -319,7 +321,30 @@ export function AdminRegistrations() {
                         </span>
                       </td>
                       <td className="py-3 pr-3 text-xs">
-                        {isPaid ? <span className="font-semibold text-emerald-700">{referenceNo || '-'}</span> : <span className="text-slate-400">-</span>}
+                        {isPaid ? (
+                          <span className="inline-flex items-center gap-1.5">
+                            <span className="font-semibold text-emerald-700">{referenceNo || '-'}</span>
+                            {referenceNo ? (
+                              <span
+                                title={copiedId === r.id ? 'Copied!' : 'Copy reference number'}
+                                onClick={() => {
+                                  void navigator.clipboard.writeText(referenceNo)
+                                  setCopiedId(r.id)
+                                  setTimeout(() => setCopiedId(null), 2000)
+                                }}
+                                className="cursor-pointer"
+                              >
+                                {copiedId === r.id ? (
+                                  <Check className="h-3 w-3 shrink-0 text-emerald-500 transition-colors" />
+                                ) : (
+                                  <Copy className="h-3 w-3 shrink-0 text-slate-400 hover:text-slate-600 transition-colors" />
+                                )}
+                              </span>
+                            ) : null}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400">-</span>
+                        )}
                       </td>
                       <td className="py-3 pr-3 text-xs font-semibold text-slate-700">
                         <span className="inline-flex items-center gap-1">
