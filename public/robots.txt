@@ -1,0 +1,11 @@
+User-agent: *
+Allow: /
+
+# Block admin and authenticated/private flows from indexing.
+Disallow: /admin
+Disallow: /admin/
+Disallow: /register/form
+Disallow: /register/payment
+Disallow: /register/payment-success
+
+Sitemap: https://alloutmultisports.com/sitemap.xml
